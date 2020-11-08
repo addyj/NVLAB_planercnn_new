@@ -20,7 +20,7 @@ import torch.utils.data
 from torch.autograd import Variable
 import torchvision
 import utils
-from torchvision.ops.nms import nms
+from torchvision.ops import nms
 from roialign.roi_align.crop_and_resize import CropAndResizeFunction
 import cv2
 from models.modules import *
@@ -1914,7 +1914,7 @@ class MaskRCNN(nn.Module):
                     box_ids = Variable(torch.arange(roi_gt_masks.size()[0]), requires_grad=False).int()
                     if self.config.GPU_COUNT:
                         box_ids = box_ids.cuda()
-                    roi_gt_masks = Variable(CropAndResizeFunction(self.config.FINAL_MASK_SHAPE[0], self.config.FINAL_MASK_SHAPE[1], 0)(roi_gt_masks.unsqueeze(1), boxes, box_ids).data, requires_grad=False)
+                    roi_gt_masks = Variable(CropAndResizeFunction().apply(roi_gt_masks.unsqueeze(1), boxes, box_ids, self.config.FINAL_MASK_SHAPE[0], self.config.FINAL_MASK_SHAPE[1], 0).data, requires_grad=False)
                     roi_gt_masks = roi_gt_masks.squeeze(1)
 
                     roi_gt_masks = torch.round(roi_gt_masks)
