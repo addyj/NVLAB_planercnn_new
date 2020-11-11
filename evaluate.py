@@ -587,13 +587,15 @@ def evaluate(options):
                     continue
             else:
                 for c in range(len(detection_pair)):
-                    np.save(options.test_dir + '/' + str(sampleIndex % 500) + '_plane_parameters_' + str(c) + '.npy', detection_pair[c]['detection'][:, 6:9])
-                    np.save(options.test_dir + '/' + str(sampleIndex % 500) + '_plane_masks_' + str(c) + '.npy', detection_pair[c]['masks'][:, 80:560])
+                    #np.save(options.test_dir + '/' + str(sampleIndex % 500) + '_plane_parameters_' + str(c) + '.npy', detection_pair[c]['detection'][:, 6:9])
+                    #np.save(options.test_dir + '/' + str(sampleIndex % 500) + '_plane_masks_' + str(c) + '.npy', detection_pair[c]['masks'][:, 80:560])
                     continue
                 pass
                             
             if sampleIndex < 30 or options.debug or options.dataset != '':
-                visualizeBatchPair(options, config, input_pair, detection_pair, indexOffset=sampleIndex % 500, suffix='_' + name + options.modelType, write_ply=options.testingIndex >= 0, write_new_view=options.testingIndex >= 0 and 'occlusion' in options.suffix)
+                name_file = image_list[sampleIndex]
+                print(">>>>>>>>>>>. INDEX ", sampleIndex)
+                visualizeBatchPair(name_file, options, config, input_pair, detection_pair, indexOffset=sampleIndex, suffix='_' + name + options.modelType, write_ply=options.testingIndex >= 0, write_new_view=options.testingIndex >= 0 and 'occlusion' in options.suffix)
                 pass
             if sampleIndex >= options.numTestingImages:
                 break

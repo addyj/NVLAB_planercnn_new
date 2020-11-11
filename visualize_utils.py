@@ -81,10 +81,10 @@ def visualizeBatchDeMoN(options, input_dict, results, indexOffset=0, prefix='', 
         continue
     return
 
-def visualizeBatchPair(options, config, inp_pair, detection_pair, indexOffset=0, prefix='', suffix='', write_ply=False, write_new_view=False):
+def visualizeBatchPair(file_N, options, config, inp_pair, detection_pair, indexOffset=0, prefix='', suffix='', write_ply=False, write_new_view=False):
     detection_images = []    
     for pair_index, (input_dict, detection_dict) in enumerate(zip(inp_pair, detection_pair)):
-        image_dict = visualizeBatchDetection(options, config, input_dict, detection_dict, indexOffset=indexOffset, prefix=prefix, suffix='_' + str(pair_index), prediction_suffix=suffix, write_ply=write_ply, write_new_view=write_new_view)
+        image_dict = visualizeBatchDetection(file_N, options, config, input_dict, detection_dict, indexOffset=indexOffset, prefix=prefix, suffix='_' + str(pair_index), prediction_suffix=suffix, write_ply=write_ply, write_new_view=write_new_view)
         detection_images.append(image_dict['detection'])
         continue
     detection_image = tileImages([detection_images])
@@ -168,12 +168,12 @@ def visualizeBatchRefinement(options, config, input_dict, results, indexOffset=0
         pass
     return
 
-def visualizeBatchDetection(options, config, input_dict, detection_dict, indexOffset=0, prefix='', suffix='', prediction_suffix='', write_ply=False, write_new_view=False):
+def visualizeBatchDetection(file_N, options, config, input_dict, detection_dict, indexOffset=0, prefix='', suffix='', prediction_suffix='', write_ply=False, write_new_view=False):
     image_dict = {}
     images = input_dict['image'].detach().cpu().numpy().transpose((0, 2, 3, 1))
     images = unmold_image(images, config)
     image = images[0]
-    cv2.imwrite(options.test_dir + '/' + str(indexOffset) + '_image' + suffix + '.png', image[80:560])
+    #cv2.imwrite(options.test_dir + '/' + str(indexOffset) + '_image' + suffix + '.png', image[80:560])
     
     if 'warped_image' in input_dict:
         warped_images = input_dict['warped_image'].detach().cpu().numpy().transpose((0, 2, 3, 1))
@@ -194,7 +194,7 @@ def visualizeBatchDetection(options, config, input_dict, detection_dict, indexOf
     if 'depth' in input_dict:
         depths = input_dict['depth'].detach().cpu().numpy()                
         depth_gt = depths[0]
-        cv2.imwrite(options.test_dir + '/' + str(indexOffset) + '_depth' + suffix + '.png', drawDepthImage(depth_gt[80:560]))
+        #cv2.imwrite(options.test_dir + '/' + str(indexOffset) + '_depth' + suffix + '.png', drawDepthImage(depth_gt[80:560]))
         pass
 
     windows = (0, 0, images.shape[1], images.shape[2])        
@@ -216,7 +216,7 @@ def visualizeBatchDetection(options, config, input_dict, detection_dict, indexOf
             mask = cv2.resize(mask, (box[3] - box[1], box[2] - box[0]))
             segmentation_image[box[0]:box[2], box[1]:box[3]] = np.minimum(segmentation_image[box[0]:box[2], box[1]:box[3]] + np.expand_dims(mask, axis=-1) * np.random.randint(255, size=(3, ), dtype=np.int32), 255)
             continue
-        cv2.imwrite(options.test_dir + '/' + str(indexOffset) + '_segmentation' + suffix + '.png', segmentation_image.astype(np.uint8)[80:560])
+        #cv2.imwrite(options.test_dir + '/' + str(indexOffset) + '_segmentation' + suffix + '.png', segmentation_image.astype(np.uint8)[80:560])
         if config.NUM_PARAMETER_CHANNELS > 0 and not config.OCCLUSION:
             depth_image = np.zeros((image.shape[0], image.shape[1]))
             for box, patch_depth in zip(boxes, depths):
@@ -241,18 +241,18 @@ def visualizeBatchDetection(options, config, input_dict, detection_dict, indexOf
         
     if 'depth' in detection_dict:    
         depth_pred = detection_dict['depth'][0].detach().cpu().numpy()
-        cv2.imwrite(options.test_dir + '/' + str(indexOffset) + '_depth' + suffix + prediction_suffix + '.png', drawDepthImage(depth_pred[80:560]))                    
+        #cv2.imwrite(options.test_dir + '/' + str(indexOffset) + '_depth' + suffix + prediction_suffix + '.png', drawDepthImage(depth_pred[80:560]))                    
         if options.debug:
             valid_mask = (depth_gt > 1e-4) * (input_dict['segmentation'].detach().cpu().numpy()[0] >= 0) * (detection_dict['mask'].detach().cpu().numpy().squeeze() > 0.5)
             pass
         pass
     
     if 'depth_np' in detection_dict:
-        cv2.imwrite(options.test_dir + '/' + str(indexOffset) + '_depth' + suffix + prediction_suffix + '_np.png', drawDepthImage(detection_dict['depth_np'].squeeze().detach().cpu().numpy()[80:560]))
+        #cv2.imwrite(options.test_dir + '/' + str(indexOffset) + '_depth' + suffix + prediction_suffix + '_np.png', drawDepthImage(detection_dict['depth_np'].squeeze().detach().cpu().numpy()[80:560]))
         pass
 
     if 'depth_ori' in detection_dict:
-        cv2.imwrite(options.test_dir + '/' + str(indexOffset) + '_depth' + suffix + prediction_suffix + '_ori.png', drawDepthImage(detection_dict['depth_ori'].squeeze().detach().cpu().numpy()[80:560]))
+        #cv2.imwrite(options.test_dir + '/' + str(indexOffset) + '_depth' + suffix + prediction_suffix + '_ori.png', drawDepthImage(detection_dict['depth_ori'].squeeze().detach().cpu().numpy()[80:560]))
         pass
     
 
@@ -266,7 +266,10 @@ def visualizeBatchDetection(options, config, input_dict, detection_dict, indexOf
             pass
         instance_image, normal_image, depth_image = draw_instances(config, image, depth_gt, detections[:, :4], detection_masks > 0.5, detections[:, 4].astype(np.int32), detections[:, 6:], detections[:, 5], draw_mask=True, transform_planes=False, detection_flags=detection_flags)
         image_dict['detection'] = instance_image
-        cv2.imwrite(options.test_dir + '/' + str(indexOffset) + '_segmentation' + suffix + prediction_suffix + '.png', instance_image[80:560])
+        pred_suff = os.path.splitext(os.path.basename(file_N))[0]
+        print("$$$$$$$$$$$ ", pred_suff)
+        # cv2.imwrite(options.test_dir + '/' + str(indexOffset) + '_segmentation' + suffix + prediction_suffix + '.png', instance_image[80:560])
+        cv2.imwrite(options.test_dir + '/' + str(pred_suff) + '.png', instance_image[80:560])
     else:
         image_dict['detection'] = np.zeros(image.shape, dtype=image.dtype)
         pass
