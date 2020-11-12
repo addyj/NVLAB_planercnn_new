@@ -14,7 +14,7 @@ import numpy as np
 import cv2
 import sys
 
-from models.model import *
+from models.rcnn import *
 from models.refinement_net import *
 from models.modules import *
 from datasets.plane_stereo_dataset import *
@@ -25,7 +25,7 @@ from evaluate_utils import *
 from options import parse_args
 from config import PlaneConfig
 
-    
+
 def train(options):
     if not os.path.exists(options.checkpoint_dir):
         os.system("mkdir -p %s"%options.checkpoint_dir)
@@ -35,7 +35,7 @@ def train(options):
         pass
 
     config = PlaneConfig(options)
-    
+
     dataset = PlaneDataset(options, config, split='train', random=True)
     dataset_test = PlaneDataset(options, config, split='test', random=False)
 
@@ -46,9 +46,9 @@ def train(options):
     model = MaskRCNN(config)
     refine_model = RefineModel(options)
     model.cuda()
-    model.train()    
+    model.train()
     refine_model.cuda()
-    refine_model.train()    
+    refine_model.train()
 
     if options.restore == 1:
         ## Resume training
@@ -61,7 +61,7 @@ def train(options):
         print("Loading pretrained weights ", model_path)
         model.load_weights(model_path)
         pass
-    
+
     if options.trainingMode != '':
         ## Specify which layers to train, default is "all"
         layer_regex = {
@@ -96,12 +96,12 @@ def train(options):
     if 'refine_only' in options.suffix:
         optimizer = optim.Adam(refine_model.parameters(), lr = options.LR)
         pass
-    
+
     if options.restore == 1 and os.path.exists(options.checkpoint_dir + '/optim.pth'):
-        optimizer.load_state_dict(torch.load(options.checkpoint_dir + '/optim.pth'))        
+        optimizer.load_state_dict(torch.load(options.checkpoint_dir + '/optim.pth'))
         pass
 
-    
+
     for epoch in range(options.numEpochs):
         epoch_losses = []
         data_iterator = tqdm(dataloader, total=len(dataset) + 1)
@@ -109,13 +109,13 @@ def train(options):
         optimizer.zero_grad()
 
         for sampleIndex, sample in enumerate(data_iterator):
-            losses = []            
+            losses = []
 
             input_pair = []
             detection_pair = []
             dicts_pair = []
 
-            camera = sample[30][0].cuda()                
+            camera = sample[30][0].cuda()
             for indexOffset in [0, 13]:
                 images, image_metas, rpn_match, rpn_bbox, gt_class_ids, gt_boxes, gt_masks, gt_parameters, gt_depth, extrinsics, gt_plane, gt_segmentation, plane_indices = sample[indexOffset + 0].cuda(), sample[indexOffset + 1].numpy(), sample[indexOffset + 2].cuda(), sample[indexOffset + 3].cuda(), sample[indexOffset + 4].cuda(), sample[indexOffset + 5].cuda(), sample[indexOffset + 6].cuda(), sample[indexOffset + 7].cuda(), sample[indexOffset + 8].cuda(), sample[indexOffset + 9].cuda(), sample[indexOffset + 10].cuda(), sample[indexOffset + 11].cuda(), sample[indexOffset + 12].cuda()
 
@@ -129,9 +129,9 @@ def train(options):
                 losses += [rpn_class_loss + rpn_bbox_loss + mrcnn_class_loss + mrcnn_bbox_loss + mrcnn_mask_loss + mrcnn_parameter_loss]
 
                 if config.PREDICT_NORMAL_NP:
-                    normal_np_pred = depth_np_pred[0, 1:]                    
+                    normal_np_pred = depth_np_pred[0, 1:]
                     depth_np_pred = depth_np_pred[:, 0]
-                    gt_normal = gt_depth[0, 1:]                    
+                    gt_normal = gt_depth[0, 1:]
                     gt_depth = gt_depth[:, 0]
                     depth_np_loss = l1LossMask(depth_np_pred[:, 80:560], gt_depth[:, 80:560], (gt_depth[:, 80:560] > 1e-4).float())
                     normal_np_loss = l2LossMask(normal_np_pred[:, 80:560], gt_normal[:, 80:560], (torch.norm(gt_normal[:, 80:560], dim=0) > 1e-4).float())
@@ -149,11 +149,11 @@ def train(options):
                         detections, detection_masks = detections.detach(), detection_masks.detach()
                         pass
                     XYZ_pred, detection_mask, plane_XYZ = calcXYZModule(config, camera, detections, detection_masks, depth_np_pred, return_individual=True)
-                    detection_mask = detection_mask.unsqueeze(0)                        
+                    detection_mask = detection_mask.unsqueeze(0)
                 else:
                     XYZ_pred = torch.zeros((3, config.IMAGE_MAX_DIM, config.IMAGE_MAX_DIM)).cuda()
                     detection_mask = torch.zeros((1, config.IMAGE_MAX_DIM, config.IMAGE_MAX_DIM)).cuda()
-                    plane_XYZ = torch.zeros((1, 3, config.IMAGE_MAX_DIM, config.IMAGE_MAX_DIM)).cuda()                        
+                    plane_XYZ = torch.zeros((1, 3, config.IMAGE_MAX_DIM, config.IMAGE_MAX_DIM)).cuda()
                     pass
 
 
@@ -173,8 +173,8 @@ def train(options):
                     else:
                         depth_loss = l1LossMask(depth_np_pred[:, 80:560], gt_depth[:, 80:560], (gt_depth[:, 80:560] > 1e-4).float())
                         pass
-                    losses.append(depth_loss)                                                
-                    pass                    
+                    losses.append(depth_loss)
+                    pass
                 continue
 
             if (len(detection_pair[0]['detection']) > 0 and len(detection_pair[0]['detection']) < 30) and 'refine' in options.suffix:
@@ -184,7 +184,7 @@ def train(options):
                 pose_gt = torch.cat([pose[0:1], -pose[2:3], pose[1:2], pose[3:4], -pose[5:6], pose[4:5]], dim=0).unsqueeze(0)
                 camera = camera.unsqueeze(0)
                 c = 0
-                detection_dict, input_dict = detection_pair[c], input_pair[c]                
+                detection_dict, input_dict = detection_pair[c], input_pair[c]
                 detections = detection_dict['detection']
                 detection_masks = detection_dict['masks']
                 image = (input_dict['image'] + config.MEAN_PIXEL_TENSOR.view((-1, 1, 1))) / 255.0 - 0.5
@@ -204,7 +204,7 @@ def train(options):
                     masks_inp = torch.nn.functional.interpolate(masks_inp[:, :, 80:560], size=(192, 256), mode='bilinear')
                     depth_gt = torch.nn.functional.interpolate(depth_gt[:, :, 80:560], size=(192, 256), mode='nearest')
                     segmentation = torch.nn.functional.interpolate(segmentation[:, 80:560].unsqueeze(1).float(), size=(192, 256), mode='nearest').squeeze().long()
-                    plane_depth = torch.nn.functional.interpolate(plane_depth[:, 80:560].unsqueeze(1).float(), size=(192, 256), mode='bilinear').squeeze(1)                    
+                    plane_depth = torch.nn.functional.interpolate(plane_depth[:, 80:560].unsqueeze(1).float(), size=(192, 256), mode='bilinear').squeeze(1)
                     depth_np = torch.nn.functional.interpolate(depth_np[:, 80:560].unsqueeze(1), size=(192, 256), mode='bilinear').squeeze(1)
                 else:
                     detection_masks = detection_masks[:, 80:560]
@@ -216,10 +216,10 @@ def train(options):
                     plane_depth = plane_depth[:, 80:560]
                     depth_np = depth_np[:, 80:560]
                     pass
-                
+
                 depth_inv = invertDepth(depth_gt)
                 depth_inv_small = depth_inv[:, :, ::4, ::4].contiguous()
-                
+
 
                 ## Generate supervision target for the refinement network
                 segmentation_one_hot = (segmentation == torch.arange(segmentation.max() + 1).cuda().view((-1, 1, 1, 1))).long()
@@ -237,9 +237,9 @@ def train(options):
                 ## Run the refinement network
                 results = refine_model(image, image_2, camera, masks_inp, detection_dict['detection'][:, 6:9], plane_depth, depth_np)
 
-                plane_depth_loss = torch.zeros(1).cuda()            
+                plane_depth_loss = torch.zeros(1).cuda()
                 depth_loss = torch.zeros(1).cuda()
-                plane_loss = torch.zeros(1).cuda()                        
+                plane_loss = torch.zeros(1).cuda()
                 mask_loss = torch.zeros(1).cuda()
                 flow_loss = torch.zeros(1).cuda()
                 flow_confidence_loss = torch.zeros(1).cuda()
@@ -252,7 +252,7 @@ def train(options):
                         else:
                             masks_gt = masks_gt_small
                             pass
-                        
+
                         all_masks_gt = torch.cat([1 - masks_gt.max(dim=0, keepdim=True)[0], masks_gt], dim=0)
                         segmentation = all_masks_gt.max(0)[1].view(-1)
                         masks_logits = masks_pred.squeeze(1).transpose(0, 1).transpose(1, 2).contiguous().view((segmentation.shape[0], -1))
@@ -265,14 +265,14 @@ def train(options):
                             mask_loss += torch.nn.functional.cross_entropy(masks_logits, segmentation, weight=torch.cat([torch.ones(1).cuda(), valid_mask], dim=0))
                             pass
                         masks_pred = (masks_pred.max(0, keepdim=True)[1] == torch.arange(len(masks_pred)).cuda().long().view((-1, 1, 1))).float()[1:]
-                        pass                    
+                        pass
                     continue
                 losses += [mask_loss + depth_loss + plane_depth_loss + plane_loss]
-                
+
                 masks = results[-1]['mask'].squeeze(1)
                 all_masks = torch.softmax(masks, dim=0)
                 masks_small = all_masks[1:]
-                all_masks = torch.nn.functional.interpolate(all_masks.unsqueeze(1), size=(480, 640), mode='bilinear').squeeze(1)                        
+                all_masks = torch.nn.functional.interpolate(all_masks.unsqueeze(1), size=(480, 640), mode='bilinear').squeeze(1)
                 all_masks = (all_masks.max(0, keepdim=True)[1] == torch.arange(len(all_masks)).cuda().long().view((-1, 1, 1))).float()
                 masks = all_masks[1:]
                 detection_masks = torch.zeros(detection_dict['masks'].shape).cuda()
@@ -281,7 +281,7 @@ def train(options):
                 results[-1]['mask'] = masks_small
 
                 camera = camera.squeeze(0)
-                
+
                 if 'refine_after' in options.suffix:
                     ## Build the warping loss upon refined results
                     XYZ_pred, detection_mask, plane_XYZ = calcXYZModule(config, camera, detections, detection_masks, detection_dict['depth_np'], return_individual=True)
@@ -308,13 +308,13 @@ def train(options):
                 warped_images = warped_info[4:7].unsqueeze(0)
                 warped_mask = warped_info[3]
 
-                with torch.no_grad():                    
+                with torch.no_grad():
                     valid_mask = valid_mask * (input_pair[c]['depth'] > 1e-4).float()
                     pass
 
                 warped_depth_loss = l1LossMask(warped_depth, input_pair[c]['depth'], valid_mask)
                 losses += [warped_depth_loss]
-                
+
                 if 'warping1' in options.suffix or 'warping3' in options.suffix:
                     warped_mask_loss = l1LossMask(warped_mask, (input_pair[c]['segmentation'] >= 0).float(), valid_mask)
                     losses += [warped_mask_loss]
@@ -324,12 +324,12 @@ def train(options):
                     warped_image_loss = l1NormLossMask(warped_images, input_pair[c]['image'], dim=1, valid_mask=valid_mask)
                     losses += [warped_image_loss]
                     pass
-                
+
                 input_pair[c]['warped_depth'] = (warped_depth * valid_mask + (1 - valid_mask) * 10).squeeze()
-                continue            
+                continue
             loss = sum(losses)
             losses = [l.data.item() for l in losses]
-            
+
             epoch_losses.append(losses)
             status = str(epoch + 1) + ' loss: '
             for l in losses:
@@ -339,11 +339,11 @@ def train(options):
 
             sys.stdout.write('\r ' + str(sampleIndex) + ' ' + status)
             sys.stdout.flush()
-            
+
             data_iterator.set_description(status)
 
             loss.backward()
-            
+
             if (sampleIndex + 1) % options.batchSize == 0:
                 optimizer.step()
                 optimizer.zero_grad()
@@ -364,7 +364,7 @@ def train(options):
                 ## Save models
                 print('loss', np.array(epoch_losses).mean(0))
                 torch.save(model.state_dict(), options.checkpoint_dir + '/checkpoint.pth')
-                torch.save(refine_model.state_dict(), options.checkpoint_dir + '/checkpoint_refine.pth')                
+                torch.save(refine_model.state_dict(), options.checkpoint_dir + '/checkpoint_refine.pth')
                 torch.save(optimizer.state_dict(), options.checkpoint_dir + '/optim.pth')
                 pass
             continue
@@ -374,7 +374,7 @@ def train(options):
 
 if __name__ == '__main__':
     args = parse_args()
-    
+
     args.keyname = 'planercnn'
 
     args.keyname += '_' + args.anchorType
@@ -387,16 +387,15 @@ if __name__ == '__main__':
     if args.suffix != '':
         args.keyname += '_' + args.suffix
         pass
-    
+
     args.checkpoint_dir = 'checkpoint/' + args.keyname
     args.test_dir = 'test/' + args.keyname
 
     if False:
         writeHTML(args.test_dir, ['image_0', 'segmentation_0', 'depth_0', 'depth_0_detection', 'depth_0_detection_ori'], labels=['input', 'segmentation', 'gt', 'before', 'after'], numImages=20, image_width=160, convertToImage=True)
         exit(1)
-        
+
     os.system('rm ' + args.test_dir + '/*.png')
     print('keyname=%s task=%s started'%(args.keyname, args.task))
 
     train(args)
-

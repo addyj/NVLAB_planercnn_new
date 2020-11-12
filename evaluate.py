@@ -17,7 +17,7 @@ import cv2
 import copy
 import glob
 
-from models.model import *
+from models.rcnn import *
 from models.refinement_net import RefineModel
 from models.modules import *
 from datasets.plane_stereo_dataset import PlaneDataset
@@ -58,7 +58,7 @@ class PlaneRCNNDetector():
             checkpoint_dir += '_' + options.suffix
             pass
 
-        ## Indicates that the refinement network is trained separately        
+        ## Indicates that the refinement network is trained separately
         separate = modelType == 'refine'
 
         if not separate:
@@ -591,7 +591,7 @@ def evaluate(options):
                     #np.save(options.test_dir + '/' + str(sampleIndex % 500) + '_plane_masks_' + str(c) + '.npy', detection_pair[c]['masks'][:, 80:560])
                     continue
                 pass
-                            
+
             if sampleIndex < 30 or options.debug or options.dataset != '':
                 name_file = image_list[sampleIndex]
                 print(">>>>>>>>>>>. INDEX ", sampleIndex)

@@ -1383,28 +1383,24 @@ def compute_losses(config, rpn_match, rpn_bbox, rpn_class_logits, rpn_pred_bbox,
 
 
 ############################################################
-#  MaskRCNN Class
+#  MaskRCNN Class (Turned Into Decoder for POD Predictor)
 ############################################################
 
-class MaskRCNN(nn.Module):
+# class MaskRCNN(nn.Module):
+class Decoder3(nn.Module):
     """Encapsulates the Mask RCNN model functionality.
     """
-
-    def __init__(self, config, model_dir='test'):
+    # def __init__(self, config, model_dir='test'):
+    def __init__(self, config, C1, C2, C3, C4):
         """
         config: A Sub-class of the Config class
-        model_dir: Directory to save training logs and trained weights
         """
-        super(MaskRCNN, self).__init__()
+        super(Decoder3, self).__init__()
         self.config = config
-        self.model_dir = model_dir
-        self.set_log_dir()
-        self.build(config=config)
-        self.initialize_weights()
-        self.loss_history = []
-        self.val_loss_history = []
+        self.build(config=config, C1, C2, C3, C4)
+        # self.initialize_weights()
 
-    def build(self, config):
+    def build(self, config, C1, C2, C3, C4):
         """Build Mask R-CNN architecture.
         """
 
@@ -1419,11 +1415,12 @@ class MaskRCNN(nn.Module):
         ## Bottom-up Layers
         ## Returns a list of the last layers of each stage, 5 in total.
         ## Don't create the thead (stage 5), so we pick the 4th item in the list.
-        resnet = ResNet("resnet101", stage5=True, numInputChannels=config.NUM_INPUT_CHANNELS)
-        C1, C2, C3, C4, C5 = resnet.stages()
+        # resnet = ResNet("resnet101", stage5=True, numInputChannels=config.NUM_INPUT_CHANNELS)
+        # C1, C2, C3, C4, C5 = resnet.stages()
 
         ## Top-down Layers
         ## TODO: add assert to varify feature map sizes match what's in config
+        C5 = None
         self.fpn = FPN(C1, C2, C3, C4, C5, out_channels=256, bilinear_upsampling=self.config.BILINEAR_UPSAMPLING)
 
         ## Generate Anchors
@@ -1464,21 +1461,21 @@ class MaskRCNN(nn.Module):
 
         self.apply(set_bn_fix)
 
-    def initialize_weights(self):
-        """Initialize model weights.
-        """
-
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                nn.init.xavier_uniform(m.weight)
-                if m.bias is not None:
-                    m.bias.data.zero_()
-            elif isinstance(m, nn.BatchNorm2d):
-                m.weight.data.fill_(1)
-                m.bias.data.zero_()
-            elif isinstance(m, nn.Linear):
-                m.weight.data.normal_(0, 0.01)
-                m.bias.data.zero_()
+    # def initialize_weights(self):
+    #     """Initialize model weights.
+    #     """
+    #
+    #     for m in self.modules():
+    #         if isinstance(m, nn.Conv2d):
+    #             nn.init.xavier_uniform(m.weight)
+    #             if m.bias is not None:
+    #                 m.bias.data.zero_()
+    #         elif isinstance(m, nn.BatchNorm2d):
+    #             m.weight.data.fill_(1)
+    #             m.bias.data.zero_()
+    #         elif isinstance(m, nn.Linear):
+    #             m.weight.data.normal_(0, 0.01)
+    #             m.bias.data.zero_()
 
     def set_trainable(self, layer_regex, model=None, indent=0, verbose=1):
         """Sets model layers as trainable if their names match
@@ -1490,98 +1487,64 @@ class MaskRCNN(nn.Module):
             trainable = bool(re.fullmatch(layer_regex, layer_name))
             if not trainable:
                 param[1].requires_grad = False
-    def set_log_dir(self, model_path=None):
-        """Sets the model log directory and epoch counter.
 
-        model_path: If None, or a format different from what this code uses
-            then set a new log directory and start epochs from 0. Otherwise,
-            extract the log directory and the epoch counter from the file
-            name.
-        """
+    # def find_last(self):
+    #     """Finds the last checkpoint file of the last trained model in the
+    #     model directory.
+    #     Returns:
+    #         log_dir: The directory where events and weights are saved
+    #         checkpoint_path: the path to the last checkpoint file
+    #     """
+    #     ## Get directory names. Each directory corresponds to a model
+    #     dir_names = next(os.walk(self.model_dir))[1]
+    #     key = self.config.NAME.lower()
+    #     dir_names = filter(lambda f: f.startswith(key), dir_names)
+    #     dir_names = sorted(dir_names)
+    #     if not dir_names:
+    #         return None, None
+    #     ## Pick last directory
+    #     dir_name = os.path.join(self.model_dir, dir_names[-1])
+    #     ## Find the last checkpoint
+    #     checkpoints = next(os.walk(dir_name))[2]
+    #     checkpoints = filter(lambda f: f.startswith("mask_rcnn"), checkpoints)
+    #     checkpoints = sorted(checkpoints)
+    #     if not checkpoints:
+    #         return dir_name, None
+    #     checkpoint = os.path.join(dir_name, checkpoints[-1])
+    #     return dir_name, checkpoint
 
-        ## Set date and epoch counter as if starting a new model
-        self.epoch = 0
-        now = datetime.datetime.now()
-
-        ## If we have a model path with date and epochs use them
-        if model_path:
-            ## Continue from we left of. Get epoch and date from the file name
-            ## A sample model path might look like:
-            ## /path/to/logs/coco20171029T2315/mask_rcnn_coco_0001.h5
-            regex = r".*/\w+(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})/mask\_rcnn\_\w+(\d{4})\.pth"
-            m = re.match(regex, model_path)
-            if m:
-                now = datetime.datetime(int(m.group(1)), int(m.group(2)), int(m.group(3)),
-                                        int(m.group(4)), int(m.group(5)))
-                self.epoch = int(m.group(6))
-
-        ## Directory for training logs
-        self.log_dir = os.path.join(self.model_dir, "{}{:%Y%m%dT%H%M}".format(
-            self.config.NAME.lower(), now))
-
-        ## Path to save after each epoch. Include placeholders that get filled by Keras.
-        self.checkpoint_path = os.path.join(self.log_dir, "mask_rcnn_{}_*epoch*.pth".format(
-            self.config.NAME.lower()))
-        self.checkpoint_path = self.checkpoint_path.replace(
-            "*epoch*", "{:04d}")
-
-    def find_last(self):
-        """Finds the last checkpoint file of the last trained model in the
-        model directory.
-        Returns:
-            log_dir: The directory where events and weights are saved
-            checkpoint_path: the path to the last checkpoint file
-        """
-        ## Get directory names. Each directory corresponds to a model
-        dir_names = next(os.walk(self.model_dir))[1]
-        key = self.config.NAME.lower()
-        dir_names = filter(lambda f: f.startswith(key), dir_names)
-        dir_names = sorted(dir_names)
-        if not dir_names:
-            return None, None
-        ## Pick last directory
-        dir_name = os.path.join(self.model_dir, dir_names[-1])
-        ## Find the last checkpoint
-        checkpoints = next(os.walk(dir_name))[2]
-        checkpoints = filter(lambda f: f.startswith("mask_rcnn"), checkpoints)
-        checkpoints = sorted(checkpoints)
-        if not checkpoints:
-            return dir_name, None
-        checkpoint = os.path.join(dir_name, checkpoints[-1])
-        return dir_name, checkpoint
-
-    def load_weights(self, filepath):
-        """Modified version of the correspoding Keras function with
-        the addition of multi-GPU support and the ability to exclude
-        some layers from loading.
-        exlude: list of layer names to excluce
-        """
-        if os.path.exists(filepath):
-            state_dict = torch.load(filepath)
-            try:
-                self.load_state_dict(state_dict, strict=False)
-            except:
-                print('load only base model')
-                try:
-                    state_dict = {k: v for k, v in state_dict.items() if 'classifier.linear_class' not in k and 'classifier.linear_bbox' not in k and 'mask.conv5' not in k}
-                    state = self.state_dict()
-                    state.update(state_dict)
-                    self.load_state_dict(state)
-                except:
-                    print('change input dimension')
-                    state_dict = {k: v for k, v in state_dict.items() if 'classifier.linear_class' not in k and 'classifier.linear_bbox' not in k and 'mask.conv5' not in k and 'fpn.C1.0' not in k and 'classifier.conv1' not in k}
-                    state = self.state_dict()
-                    state.update(state_dict)
-                    self.load_state_dict(state)
-                    pass
-                pass
-        else:
-            print("Weight file not found ...")
-            exit(1)
-        ## Update the log directory
-        self.set_log_dir(filepath)
-        if not os.path.exists(self.log_dir):
-            os.makedirs(self.log_dir)
+    # def load_weights(self, filepath):
+    #     """Modified version of the correspoding Keras function with
+    #     the addition of multi-GPU support and the ability to exclude
+    #     some layers from loading.
+    #     exlude: list of layer names to excluce
+    #     """
+    #     if os.path.exists(filepath):
+    #         state_dict = torch.load(filepath)
+    #         try:
+    #             self.load_state_dict(state_dict, strict=False)
+    #         except:
+    #             print('load only base model')
+    #             try:
+    #                 state_dict = {k: v for k, v in state_dict.items() if 'classifier.linear_class' not in k and 'classifier.linear_bbox' not in k and 'mask.conv5' not in k}
+    #                 state = self.state_dict()
+    #                 state.update(state_dict)
+    #                 self.load_state_dict(state)
+    #             except:
+    #                 print('change input dimension')
+    #                 state_dict = {k: v for k, v in state_dict.items() if 'classifier.linear_class' not in k and 'classifier.linear_bbox' not in k and 'mask.conv5' not in k and 'fpn.C1.0' not in k and 'classifier.conv1' not in k}
+    #                 state = self.state_dict()
+    #                 state.update(state_dict)
+    #                 self.load_state_dict(state)
+    #                 pass
+    #             pass
+    #     else:
+    #         print("Weight file not found ...")
+    #         exit(1)
+    #     ## Update the log directory
+    #     self.set_log_dir(filepath)
+    #     if not os.path.exists(self.log_dir):
+    #         os.makedirs(self.log_dir)
 
     def detect(self, images, camera, mold_image=True, image_metas=None):
         """Runs the detection pipeline.

@@ -1,6 +1,7 @@
 import torch
 from torch import optim
 from torch.utils.data import DataLoader
+from torchsummary import summary
 
 import os
 from tqdm import tqdm
@@ -9,7 +10,8 @@ import cv2
 import sys
 import glob
 
-from models.model import *
+from models.rcnn import *
+from models.custom_model import *
 from models.refinement_net import *
 from models.modules import *
 from datasets.plane_stereo_dataset import *
@@ -23,6 +25,10 @@ from config import PlaneConfig
 from datasets.inference_dataset import InferenceDataset
 from plane_utils import *
 from options import parse_args
+
+torch.backends.cudnn.enabled = True
+torch.backends.cudnn.benchmark = True
+
 
 def train(options):
     # dict_keys(['XYZ', 'depth', 'mask', 'detection', 'masks', 'depth_np', 'plane_XYZ', 'depth_ori'])
@@ -58,63 +64,32 @@ def train(options):
 
     dataloader = DataLoader(dataset, batch_size=1, shuffle=True, num_workers=16)
 
-    model = MaskRCNN(config)
+    model = POD_Model(config, options)
     refine_model = RefineModel(options)
+
     model.cuda()
-    model.train()
     refine_model.cuda()
+    model.train()
     refine_model.train()
+    
+    print(summary(model, input_size=(3, 384, 384)))
 
-    if options.restore == 1:
-        ## Resume training
-        print('restore')
-        model.load_state_dict(torch.load(options.checkpoint_dir + '/checkpoint.pth'))
-        refine_model.load_state_dict(torch.load(options.checkpoint_dir + '/checkpoint_refine.pth'))
-    elif options.restore == 2:
-        ## Train upon Mask R-CNN weights
-        model_path = options.MaskRCNNPath
-        print("Loading pretrained weights ", model_path)
-        model.load_weights(model_path)
-        pass
-
-    if options.trainingMode != '':
-        ## Specify which layers to train, default is "all"
-        layer_regex = {
-            ## all layers but the backbone
-            "heads": r"(fpn.P5\_.*)|(fpn.P4\_.*)|(fpn.P3\_.*)|(fpn.P2\_.*)|(rpn.*)|(classifier.*)|(mask.*)",
-            ## From a specific Resnet stage and up
-            "3+": r"(fpn.C3.*)|(fpn.C4.*)|(fpn.C5.*)|(fpn.P5\_.*)|(fpn.P4\_.*)|(fpn.P3\_.*)|(fpn.P2\_.*)|(rpn.*)|(classifier.*)|(mask.*)",
-            "4+": r"(fpn.C4.*)|(fpn.C5.*)|(fpn.P5\_.*)|(fpn.P4\_.*)|(fpn.P3\_.*)|(fpn.P2\_.*)|(rpn.*)|(classifier.*)|(mask.*)",
-            "5+": r"(fpn.C5.*)|(fpn.P5\_.*)|(fpn.P4\_.*)|(fpn.P3\_.*)|(fpn.P2\_.*)|(rpn.*)|(classifier.*)|(mask.*)",
-            ## All layers
-            "all": ".*",
-            "classifier": "(classifier.*)|(mask.*)|(depth.*)",
-        }
-        assert(options.trainingMode in layer_regex.keys())
-        layers = layer_regex[options.trainingMode]
-        model.set_trainable(layers)
-        pass
-
-    trainables_wo_bn = [param for name, param in model.named_parameters() if param.requires_grad and not 'bn' in name]
-    trainables_only_bn = [param for name, param in model.named_parameters() if param.requires_grad and 'bn' in name]
+    refine_model.load_state_dict(torch.load(options.checkpoint_dir + '/checkpoint_refine.pth'))
 
     model_names = [name for name, param in model.named_parameters()]
     for name, param in refine_model.named_parameters():
         assert(name not in model_names)
         continue
-    optimizer = optim.SGD([
-        {'params': trainables_wo_bn, 'weight_decay': 0.0001},
-        {'params': trainables_only_bn},
-        {'params': refine_model.parameters()}
-    ], lr=options.LR, momentum=0.9)
 
-    if 'refine_only' in options.suffix:
-        optimizer = optim.Adam(refine_model.parameters(), lr = options.LR)
-        pass
+    # trainables_wo_bn = [param for name, param in model.named_parameters() if param.requires_grad and not 'bn' in name]
+    # trainables_only_bn = [param for name, param in model.named_parameters() if param.requires_grad and 'bn' in name]
+    #
+    # optimizer = optim.SGD([
+    #     {'params': trainables_wo_bn, 'weight_decay': 0.0001},
+    #     {'params': trainables_only_bn},
+    #     {'params': refine_model.parameters()}
+    # ], lr=options.LR, momentum=0.9)
 
-    if options.restore == 1 and os.path.exists(options.checkpoint_dir + '/optim.pth'):
-        optimizer.load_state_dict(torch.load(options.checkpoint_dir + '/optim.pth'))
-        pass
 
 if __name__ == '__main__':
     args = parse_args()

@@ -12,7 +12,7 @@ import numpy as np
 from skimage.measure import find_contours
 import cv2
 
-from models.model import detection_layer, unmold_detections
+from models.rcnn import detection_layer, unmold_detections
 from models.modules import *
 from utils import *
 
@@ -40,7 +40,7 @@ def tileImages(image_list, padding_x=5, padding_y=5, background_color=0):
 def visualizeBatchDeMoN(options, input_dict, results, indexOffset=0, prefix='', concise=False):
     cornerColorMap = {'gt': np.array([255, 0, 0]), 'pred': np.array([0, 0, 255]), 'inp': np.array([0, 255, 0])}
     topdownSize = 256
-    
+
     for batchIndex in range(len(input_dict['image_1'])):
         pose = input_dict['pose'][batchIndex]
 
@@ -52,7 +52,7 @@ def visualizeBatchDeMoN(options, input_dict, results, indexOffset=0, prefix='', 
             if depth_pred.shape[0] != depth_gt.shape[0]:
                 depth_pred = cv2.resize(depth_pred, (depth_gt.shape[1], depth_gt.shape[0]))
                 pass
-            
+
             if options.scaleMode != 'variant':
                 valid_mask = np.logical_and(depth_gt > 1e-4, depth_pred > 1e-4)
                 depth_gt_values = depth_gt[valid_mask]
@@ -61,8 +61,8 @@ def visualizeBatchDeMoN(options, input_dict, results, indexOffset=0, prefix='', 
                 depth_pred *= scale
                 pass
             cv2.imwrite(options.test_dir + '/' + str(indexOffset + batchIndex) + '_depth_pred_' + str(len(results) - 1 - resultIndex) + '.png', drawDepthImage(depth_pred))
-            
-            
+
+
             if 'flow' in result:
                 flow_pred = result['flow'][batchIndex, :2].detach().cpu().numpy().transpose((1, 2, 0))
                 cv2.imwrite(options.test_dir + '/' + str(indexOffset + batchIndex) + '_flow_pred_' + str(len(results) - 1 - resultIndex) + '.png', cv2.resize(drawFlowImage(flow_pred), (256, 192)))
@@ -82,7 +82,7 @@ def visualizeBatchDeMoN(options, input_dict, results, indexOffset=0, prefix='', 
     return
 
 def visualizeBatchPair(file_N, options, config, inp_pair, detection_pair, indexOffset=0, prefix='', suffix='', write_ply=False, write_new_view=False):
-    detection_images = []    
+    detection_images = []
     for pair_index, (input_dict, detection_dict) in enumerate(zip(inp_pair, detection_pair)):
         image_dict = visualizeBatchDetection(file_N, options, config, input_dict, detection_dict, indexOffset=indexOffset, prefix=prefix, suffix='_' + str(pair_index), prediction_suffix=suffix, write_ply=write_ply, write_new_view=write_new_view)
         detection_images.append(image_dict['detection'])
@@ -115,7 +115,7 @@ def visualizeBatchRefinement(options, config, input_dict, results, indexOffset=0
             if depth_pred.shape[0] != depth_gt.shape[0]:
                 depth_pred = cv2.resize(depth_pred, (depth_gt.shape[1], depth_gt.shape[0]))
                 pass
-            
+
             if options.scaleMode != 'variant':
                 valid_mask = np.logical_and(depth_gt > 1e-4, depth_pred > 1e-4)
                 depth_gt_values = depth_gt[valid_mask]
@@ -130,7 +130,7 @@ def visualizeBatchRefinement(options, config, input_dict, results, indexOffset=0
             if depth_pred.shape[0] != depth_gt.shape[0]:
                 depth_pred = cv2.resize(depth_pred, (depth_gt.shape[1], depth_gt.shape[0]))
                 pass
-            
+
             if options.scaleMode != 'variant':
                 valid_mask = np.logical_and(depth_gt > 1e-4, depth_pred > 1e-4)
                 depth_gt_values = depth_gt[valid_mask]
@@ -158,10 +158,10 @@ def visualizeBatchRefinement(options, config, input_dict, results, indexOffset=0
             depth_pred = invertDepth(result['plane_depth_one_hot']).detach().cpu().numpy().squeeze()
             if depth_pred.shape[0] != depth_gt.shape[0]:
                 depth_pred = cv2.resize(depth_pred, (depth_gt.shape[1], depth_gt.shape[0]))
-                pass            
+                pass
             cv2.imwrite(options.test_dir + '/' + str(indexOffset) + '_depth_pred_plane_onehot_' + str(len(results) - 1 - resultIndex) + '.png', drawDepthImage(depth_pred))
             pass
-        
+
         continue
     if 'parameter' in options.suffix:
         print('plane diff', numbers)
@@ -174,7 +174,7 @@ def visualizeBatchDetection(file_N, options, config, input_dict, detection_dict,
     images = unmold_image(images, config)
     image = images[0]
     #cv2.imwrite(options.test_dir + '/' + str(indexOffset) + '_image' + suffix + '.png', image[80:560])
-    
+
     if 'warped_image' in input_dict:
         warped_images = input_dict['warped_image'].detach().cpu().numpy().transpose((0, 2, 3, 1))
         warped_images = unmold_image(warped_images, config)
@@ -192,14 +192,14 @@ def visualizeBatchDetection(file_N, options, config, input_dict, detection_dict,
         pass
 
     if 'depth' in input_dict:
-        depths = input_dict['depth'].detach().cpu().numpy()                
+        depths = input_dict['depth'].detach().cpu().numpy()
         depth_gt = depths[0]
         #cv2.imwrite(options.test_dir + '/' + str(indexOffset) + '_depth' + suffix + '.png', drawDepthImage(depth_gt[80:560]))
         pass
 
-    windows = (0, 0, images.shape[1], images.shape[2])        
-    windows = (0, 0, images.shape[1], images.shape[2])                
-    class_colors = ColorPalette(config.NUM_CLASSES).getColorMap().tolist()        
+    windows = (0, 0, images.shape[1], images.shape[2])
+    windows = (0, 0, images.shape[1], images.shape[2])
+    class_colors = ColorPalette(config.NUM_CLASSES).getColorMap().tolist()
 
     if 'mask' in input_dict:
         box_image = image.copy()
@@ -234,19 +234,19 @@ def visualizeBatchDetection(file_N, options, config, input_dict, detection_dict,
         for name, boundary in [('gt', boundary_gt), ('pred', boundary_pred)]:
             boundary_image = image.copy()
             boundary_image[boundary[0] > 0.5] = np.array([255, 0, 0])
-            boundary_image[boundary[1] > 0.5] = np.array([0, 0, 255])        
+            boundary_image[boundary[1] > 0.5] = np.array([0, 0, 255])
             cv2.imwrite(options.test_dir + '/' + str(indexOffset) + '_boundary' + suffix + '_' + name + '.png', boundary_image)
             continue
         pass
-        
-    if 'depth' in detection_dict:    
+
+    if 'depth' in detection_dict:
         depth_pred = detection_dict['depth'][0].detach().cpu().numpy()
-        #cv2.imwrite(options.test_dir + '/' + str(indexOffset) + '_depth' + suffix + prediction_suffix + '.png', drawDepthImage(depth_pred[80:560]))                    
+        #cv2.imwrite(options.test_dir + '/' + str(indexOffset) + '_depth' + suffix + prediction_suffix + '.png', drawDepthImage(depth_pred[80:560]))
         if options.debug:
             valid_mask = (depth_gt > 1e-4) * (input_dict['segmentation'].detach().cpu().numpy()[0] >= 0) * (detection_dict['mask'].detach().cpu().numpy().squeeze() > 0.5)
             pass
         pass
-    
+
     if 'depth_np' in detection_dict:
         #cv2.imwrite(options.test_dir + '/' + str(indexOffset) + '_depth' + suffix + prediction_suffix + '_np.png', drawDepthImage(detection_dict['depth_np'].squeeze().detach().cpu().numpy()[80:560]))
         pass
@@ -254,7 +254,7 @@ def visualizeBatchDetection(file_N, options, config, input_dict, detection_dict,
     if 'depth_ori' in detection_dict:
         #cv2.imwrite(options.test_dir + '/' + str(indexOffset) + '_depth' + suffix + prediction_suffix + '_ori.png', drawDepthImage(detection_dict['depth_ori'].squeeze().detach().cpu().numpy()[80:560]))
         pass
-    
+
 
     if 'detection' in detection_dict and len(detection_dict['detection']) > 0:
         detections = detection_dict['detection'].detach().cpu().numpy()
@@ -278,7 +278,7 @@ def visualizeBatchDetection(file_N, options, config, input_dict, detection_dict,
         detection_masks = detection_dict['masks']
         pose = np.eye(4)
         pose[:3, :3] = np.matmul(axisAngleToRotationMatrix(np.array([-1, 0, 0]), np.pi / 18 * 0), axisAngleToRotationMatrix(np.array([0, 0, -1]), np.pi / 18))
-        pose[:3, 3] = np.array([-0.4, 0, 0])        
+        pose[:3, 3] = np.array([-0.4, 0, 0])
         drawNewViewDepth(options.test_dir + '/' + str(indexOffset) + '_new_view' + suffix + prediction_suffix + '.png', detection_masks[:, 80:560].detach().cpu().numpy(), detection_dict['plane_XYZ'].detach().cpu().numpy().transpose((0, 2, 3, 1))[:, 80:560], input_dict['camera'].detach().cpu().numpy(), pose)
         depth = depth_gt[80:560]
         ranges = config.getRanges(input_dict['camera']).detach().cpu().numpy()
@@ -287,7 +287,7 @@ def visualizeBatchDetection(file_N, options, config, input_dict, detection_dict,
         depth = detection_dict['depth_np'].squeeze()[80:560]
         ranges = config.getRanges(input_dict['camera']).detach().cpu().numpy()
         XYZ_gt = ranges * np.expand_dims(depth, axis=-1)
-        drawNewViewDepth(options.test_dir + '/' + str(indexOffset) + '_new_view_depth_pred' + suffix + prediction_suffix + '.png', np.expand_dims(depth > 1e-4, 0), np.expand_dims(XYZ_gt, 0), input_dict['camera'].detach().cpu().numpy(), pose)        
+        drawNewViewDepth(options.test_dir + '/' + str(indexOffset) + '_new_view_depth_pred' + suffix + prediction_suffix + '.png', np.expand_dims(depth > 1e-4, 0), np.expand_dims(XYZ_gt, 0), input_dict['camera'].detach().cpu().numpy(), pose)
         pass
 
     if write_new_view:
@@ -319,13 +319,13 @@ def visualizeBatchDetection(file_N, options, config, input_dict, detection_dict,
 
                 index_offset = sum(num_frames[:c]) + frame
                 drawNewViewDepth(options.test_dir + '/' + str(indexOffset) + '_video/' + str(index_offset) + '.png', detection_masks, XYZ_pred, camera, pose)
-                
+
                 drawNewViewDepth(options.test_dir + '/' + str(indexOffset) + '_video_gt/' + str(index_offset) + '.png', valid_mask, XYZ_gt, camera, pose)
                 continue
             continue
         exit(1)
         pass
-    
+
     if write_ply:
         detection_masks = detection_dict['masks']
         if 'plane_XYZ' not in detection_dict:
@@ -383,7 +383,7 @@ def visualizeBatchDepth(options, config, input_dict, detection_dict, indexOffset
             cv2.imwrite(options.test_dir + '/' + str(indexOffset + batchIndex) + '_depth_pred_np' + suffix + '.png', drawDepthImage(depth))
             continue
         pass
-    
+
     return
 
 def visualizeBatchSingle(options, config, images, image_metas, rpn_rois, depths, dicts, input_dict={}, inference={}, indexOffset=0, prefix='', suffix='', compare_planenet=False):
@@ -407,7 +407,7 @@ def visualizeBatchSingle(options, config, images, image_metas, rpn_rois, depths,
             box = np.round(box).astype(np.int32)
             cv2.rectangle(box_image, (box[1], box[0]), (box[3], box[2]), color=(0, 0, 255), thickness=2)
             continue
-        
+
         segmentation_image = image * 0.0
         for box, mask in zip(boxes, masks):
             box = np.round(box).astype(np.int32)
@@ -416,7 +416,7 @@ def visualizeBatchSingle(options, config, images, image_metas, rpn_rois, depths,
             continue
         cv2.imwrite(options.test_dir + '/' + str(indexOffset) + '_detection' + suffix + '.png', segmentation_image.astype(np.uint8))
         pass
-    
+
     for name, result_dict in dicts:
 
         if len(rpn_rois) > 0:
@@ -427,7 +427,7 @@ def visualizeBatchSingle(options, config, images, image_metas, rpn_rois, depths,
                 continue
         else:
             continue
-        
+
         if len(detections) > 0:
             detections[:, :4] = ori_rois
 
@@ -452,7 +452,7 @@ def visualizeBatchSingle(options, config, images, image_metas, rpn_rois, depths,
             for instance_index, box in enumerate(detections.astype(np.int32)):
                 cv2.rectangle(box_image, (box[1], box[0]), (box[3], box[2]), color=tuple(class_colors[int(box[4])]), thickness=3)
                 continue
-            
+
             final_rois, final_class_ids, final_scores, final_masks, final_parameters = unmold_detections(config, detections, mrcnn_mask, image.shape, windows, debug=False)
 
             result = {
@@ -494,7 +494,7 @@ def visualizeBatchBoundary(options, config, images, boundary_pred, boundary_gt, 
         for name, boundary in [('gt', boundary_gt[batchIndex]), ('pred', boundary_pred[batchIndex])]:
             image = images[batchIndex].copy()
             image[boundary[0] > 0.5] = np.array([255, 0, 0])
-            image[boundary[1] > 0.5] = np.array([0, 0, 255])        
+            image[boundary[1] > 0.5] = np.array([0, 0, 255])
             cv2.imwrite(options.test_dir + '/' + str(indexOffset + batchIndex) + '_boundary_' + name + '.png', image)
             continue
         continue
@@ -548,7 +548,7 @@ def draw_instances(config, image, depth, boxes, masks, class_ids, parameters,
 
     class_colors = ColorPalette(11).getColorMap(returnTuples=True)
     class_colors[0] = (128, 128, 128)
-    
+
     ## Show area outside image boundaries.
     height, width = image.shape[:2]
     masked_image = image.astype(np.uint8).copy()
@@ -562,7 +562,7 @@ def draw_instances(config, image, depth, boxes, masks, class_ids, parameters,
             # Skip this instance. Has no bbox. Likely lost in image cropping.
             continue
         y1, x1, y2, x2 = boxes[i]
-        
+
         ## Label
         class_id = class_ids[i]
 
@@ -572,7 +572,7 @@ def draw_instances(config, image, depth, boxes, masks, class_ids, parameters,
         ## Mask
         mask = masks[:, :, i]
         masked_image = apply_mask(masked_image.astype(np.float32), mask, instance_colors[i]).astype(np.uint8)
-        
+
         ## Mask Polygon
         ## Pad to ensure proper polygons for masks that touch image edges.
         if draw_mask:
@@ -587,8 +587,8 @@ def draw_instances(config, image, depth, boxes, masks, class_ids, parameters,
                 continue
 
         continue
-    
-    normal_image = drawNormalImage(normal_image)    
+
+    normal_image = drawNormalImage(normal_image)
     depth_image = drawDepthImage(depth_image)
     return masked_image.astype(np.uint8), normal_image.astype(np.uint8), depth_image
 
@@ -600,7 +600,7 @@ def writePLYFileMask(filename, image, masks, plane_XYZ, write_occlusion=False):
 
     width = image.shape[1]
     height = image.shape[0]
-    
+
     betweenRegionThreshold = 0.1
     nonPlanarRegionThreshold = 0.02
     dotThreshold = np.cos(np.deg2rad(30))
@@ -670,7 +670,7 @@ end_header
 
         for face in faces:
             valid = True
-            f.write('3 ')                
+            f.write('3 ')
             for c in face:
                 f.write(str(c) + ' ')
                 continue
@@ -745,7 +745,7 @@ end_header
         faces = np.arange(len(points)).reshape((-1, 3))
         for face in faces:
             valid = True
-            f.write('3 ')                
+            f.write('3 ')
             for c in face:
                 f.write(str(c) + ' ')
                 continue
@@ -813,7 +813,7 @@ def visualizeGraph(var, params):
 
 if __name__ == '__main__':
     pose = np.eye(4)
-    
+
     current_dir = os.path.dirname(os.path.realpath(__file__))
     pose_filename = current_dir + '/test/pose.txt'
     with open(pose_filename, 'w') as f:
@@ -831,4 +831,4 @@ if __name__ == '__main__':
     output_filename = current_dir + '/' + test_dir + '/' + str(indexOffset) + '_model_0_occlusion.png'
     print('screenshot', output_filename)
     os.system('../../../Screenshoter/Screenshoter --model_filename=' + model_filename + ' --output_filename=' + output_filename + ' --pose_filename=' + pose_filename)
-    exit(1)    
+    exit(1)
