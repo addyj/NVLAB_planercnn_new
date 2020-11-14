@@ -23,7 +23,7 @@ from models.modules import *
 from datasets.plane_stereo_dataset import PlaneDataset
 from datasets.inference_dataset import InferenceDataset
 from datasets.nyu_dataset import NYUDataset
-from utils import *
+from rcnn_utils import *
 from visualize_utils import *
 from evaluate_utils import *
 from plane_utils import *

@@ -12,7 +12,7 @@ import time
 import os
 import cv2
 import sys
-import utils
+import rcnn_utils as utils
 from datasets.scannet_scene import ScanNetScene
 
 class PlaneDatasetSingle(Dataset):
@@ -21,14 +21,14 @@ class PlaneDatasetSingle(Dataset):
         self.config = config
         self.split = split
         self.random = random
-        
+
         self.dataFolder = options.dataFolder
-        
+
         self.scenes = []
         self.sceneImageIndices = []
 
         self.loadClassMap()
-        
+
         planenet_scene_ids_val = np.load('datasets/scene_ids_val.npy')
         planenet_scene_ids_val = {scene_id.decode('utf-8'): True for scene_id in planenet_scene_ids_val}
         with open(self.dataFolder + '/ScanNet/Tasks/Benchmark/scannetv1_' + split + '.txt') as f:
@@ -47,7 +47,7 @@ class PlaneDatasetSingle(Dataset):
                 self.sceneImageIndices += [[len(self.scenes) - 1, imageIndex] for imageIndex in range(len(scene.imagePaths))]
                 continue
             pass
-        
+
         if random:
             t = int(time.time() * 1000000)
             np.random.seed(((t & 0xff000000) >> 24) +
@@ -77,7 +77,7 @@ class PlaneDatasetSingle(Dataset):
         self.sceneImageIndices = [[sceneIndex, imageIndex] for sceneIndex, imageIndex in self.sceneImageIndices if (sceneIndex * 10000 + imageIndex) not in self.invalid_indices]
 
         print('num images', len(self.sceneImageIndices))
-        
+
         self.anchors = utils.generate_pyramid_anchors(config.RPN_ANCHOR_SCALES,
                                                       config.RPN_ANCHOR_RATIOS,
                                                       config.BACKBONE_SHAPES,
@@ -97,7 +97,7 @@ class PlaneDatasetSingle(Dataset):
                 if line_index > 0:
                     line = line.split('\t')
                     key = line[1].strip()
-                    
+
                     if line[4].strip() != '':
                         label = int(line[4].strip())
                     else:
@@ -105,13 +105,13 @@ class PlaneDatasetSingle(Dataset):
                         pass
                     classLabelMap[key] = label
                     classLabelMap[key + 's'] = label
-                    classLabelMap[key + 'es'] = label                                        
+                    classLabelMap[key + 'es'] = label
                     pass
                 line_index += 1
                 continue
             pass
 
-        confidentClasses = {'wall': True, 
+        confidentClasses = {'wall': True,
                             'floor': True,
                             'cabinet': True,
                             'bed': True,
@@ -136,9 +136,9 @@ class PlaneDatasetSingle(Dataset):
                             'clothes': False,
                             'ceiling': True,
                             'book': False,
-                            'books': False,                      
+                            'books': False,
                             'refridgerator': True,
-                            'television': True, 
+                            'television': True,
                             'paper': False,
                             'towel': False,
                             'shower curtain': False,
@@ -166,13 +166,13 @@ class PlaneDatasetSingle(Dataset):
             continue
         self.layout_labels = {1: True, 2: True, 22: True, 9: True}
         return
-    
+
     def __len__(self):
         return len(self.sceneImageIndices)
 
     def transformPlanes(self, transformation, planes):
         planeOffsets = np.linalg.norm(planes, axis=-1, keepdims=True)
-        
+
         centers = planes
         centers = np.concatenate([centers, np.ones((planes.shape[0], 1))], axis=-1)
         newCenters = np.transpose(np.matmul(transformation, np.transpose(centers)))
@@ -188,7 +188,7 @@ class PlaneDatasetSingle(Dataset):
         planeOffsets = np.sum(newCenters * planeNormals, axis=-1, keepdims=True)
         newPlanes = planeNormals * planeOffsets
         return newPlanes
-    
+
     def __getitem__(self, index):
         t = int(time.time() * 1000000)
         np.random.seed(((t & 0xff000000) >> 24) +
@@ -198,9 +198,9 @@ class PlaneDatasetSingle(Dataset):
 
         if self.config.ANCHOR_TYPE == 'layout':
             return self.getItemLayout(index)
-        
+
         if self.config.ANCHOR_TYPE == 'structure':
-            return self.getItemStructure(index)        
+            return self.getItemStructure(index)
 
         while True:
             if self.random:
@@ -216,20 +216,20 @@ class PlaneDatasetSingle(Dataset):
             try:
                 image, planes, plane_info, segmentation, depth, camera, extrinsics = scene[imageIndex]
                 if len(planes) == 0:
-                    index += 1                    
+                    index += 1
                     continue
             except:
                 index += 1
                 continue
                 pass
-            
+
             if segmentation.max() < 0:
                 index += 1
                 continue
             break
 
         instance_masks = []
-        class_ids = []        
+        class_ids = []
         parameters = []
 
         if len(planes) > 0:
@@ -240,16 +240,16 @@ class PlaneDatasetSingle(Dataset):
                 plane_offsets = np.linalg.norm(planes, axis=-1)
                 plane_normals = planes / np.expand_dims(plane_offsets, axis=-1)
                 distances_N = np.linalg.norm(np.expand_dims(plane_normals, 1) - self.config.ANCHOR_NORMALS, axis=-1)
-                normal_anchors = distances_N.argmin(-1)                
+                normal_anchors = distances_N.argmin(-1)
                 distances_d = np.abs(np.expand_dims(plane_offsets, -1) - self.config.ANCHOR_OFFSETS)
                 offset_anchors = distances_d.argmin(-1)
             elif self.config.ANCHOR_TYPE in ['normal', 'patch']:
-                plane_offsets = np.linalg.norm(planes, axis=-1)                
+                plane_offsets = np.linalg.norm(planes, axis=-1)
                 plane_normals = planes / np.expand_dims(plane_offsets, axis=-1)
                 distances_N = np.linalg.norm(np.expand_dims(plane_normals, 1) - self.config.ANCHOR_NORMALS, axis=-1)
                 normal_anchors = distances_N.argmin(-1)
             elif self.config.ANCHOR_TYPE == 'normal_none':
-                plane_offsets = np.linalg.norm(planes, axis=-1)                    
+                plane_offsets = np.linalg.norm(planes, axis=-1)
                 plane_normals = planes / np.expand_dims(plane_offsets, axis=-1)
                 pass
             pass
@@ -278,7 +278,7 @@ class PlaneDatasetSingle(Dataset):
             elif self.config.ANCHOR_TYPE == 'normal_none':
                 class_ids.append(1)
                 normal = plane_normals[planeIndex]
-                parameters.append(np.concatenate([normal, np.zeros(1)], axis=0))                
+                parameters.append(np.concatenate([normal, np.zeros(1)], axis=0))
             else:
                 assert(False)
                 pass
@@ -300,17 +300,17 @@ class PlaneDatasetSingle(Dataset):
             gt_class_ids = gt_class_ids[ids]
             gt_boxes = gt_boxes[ids]
             gt_masks = gt_masks[:, :, ids]
-            gt_parameters = gt_parameters[ids]            
+            gt_parameters = gt_parameters[ids]
 
         ## Add to batch
         rpn_match = rpn_match[:, np.newaxis]
         image = utils.mold_image(image.astype(np.float32), self.config)
 
         depth = np.concatenate([np.zeros((80, 640)), depth, np.zeros((80, 640))], axis=0)
-        segmentation = np.concatenate([np.full((80, 640), fill_value=-1, dtype=np.int32), segmentation, np.full((80, 640), fill_value=-1, dtype=np.int32)], axis=0)        
-        
+        segmentation = np.concatenate([np.full((80, 640), fill_value=-1, dtype=np.int32), segmentation, np.full((80, 640), fill_value=-1, dtype=np.int32)], axis=0)
+
         info = [image.transpose((2, 0, 1)).astype(np.float32), image_metas, rpn_match, rpn_bbox.astype(np.float32), gt_class_ids, gt_boxes.astype(np.float32), gt_masks.transpose((2, 0, 1)).astype(np.float32), gt_parameters, depth.astype(np.float32), segmentation, camera.astype(np.float32)]
-        
+
         if self.loadNeighborImage:
             if imageIndex + self.options.frameGap < len(scene.imagePaths):
                 imagePath = scene.imagePaths[imageIndex + self.options.frameGap]
@@ -319,13 +319,13 @@ class PlaneDatasetSingle(Dataset):
                 pass
 
             image_2 = cv2.imread(imagePath)
-            
+
             image_2 = cv2.resize(image_2, (self.config.IMAGE_MAX_DIM, self.config.IMAGE_MAX_DIM))
-            
+
             info.append(image_2.transpose((2, 0, 1)).astype(np.float32))
 
             extrinsics_2_inv = []
-            posePath = imagePath.replace('color', 'pose').replace('.jpg', '.txt')            
+            posePath = imagePath.replace('color', 'pose').replace('.jpg', '.txt')
             with open(posePath, 'r') as f:
                 for line in f:
                     extrinsics_2_inv += [float(value) for value in line.strip().split(' ') if value.strip() != '']
@@ -338,12 +338,12 @@ class PlaneDatasetSingle(Dataset):
             temp = extrinsics_2[1].copy()
             extrinsics_2[1] = extrinsics_2[2]
             extrinsics_2[2] = -temp
-            
+
             transformation = np.matmul(extrinsics_2, np.linalg.inv(extrinsics))
             if np.any(np.isnan(transformation)):
                 transformation = np.concatenate([np.diag(np.ones(3)), np.zeros((3, 1))], axis=-1)
                 pass
-        
+
             rotation = transformation[:3, :3]
             translation = transformation[:3, 3]
             axis, angle = utils.rotationMatrixToAxisAngle(rotation)
@@ -351,10 +351,10 @@ class PlaneDatasetSingle(Dataset):
             info.append(pose)
             info.append(scene.scenePath + ' ' + str(imageIndex))
             pass
-            
+
         return info
-    
-    
+
+
     def getAnchorPlanesNormalOffset(self, visualize=False):
         for k in [7, ]:
             print('k', k)
@@ -380,7 +380,7 @@ class PlaneDatasetSingle(Dataset):
                     all_planes.append(planes)
                     continue
                 all_planes = np.concatenate(all_planes, axis=0)
-                np.save('test/anchor_planes/all_planes.npy', all_planes)                
+                np.save('test/anchor_planes/all_planes.npy', all_planes)
                 pass
 
             from sklearn.cluster import KMeans
@@ -396,7 +396,7 @@ class PlaneDatasetSingle(Dataset):
 
             ## Global offset anchors
             kmeans_d = KMeans(n_clusters=num_anchor_planes_d).fit(np.expand_dims(offsets, -1))
-            self.anchor_planes_d = kmeans_d.cluster_centers_            
+            self.anchor_planes_d = kmeans_d.cluster_centers_
 
             if visualize:
                 color_map = utils.ColorPalette(max(num_anchor_planes_N, num_anchor_planes_d)).getColorMap()
@@ -461,13 +461,13 @@ def load_image_gt(config, image_id, image, depth, mask, class_ids, parameters, a
         padding=config.IMAGE_PADDING)
 
     mask = utils.resize_mask(mask, scale, padding)
-    
+
     ## Random horizontal flips.
     if augment and False:
         if np.random.randint(0, 1):
             image = np.fliplr(image)
             mask = np.fliplr(mask)
-            depth = np.fliplr(depth)            
+            depth = np.fliplr(depth)
             pass
         pass
 
@@ -486,7 +486,7 @@ def load_image_gt(config, image_id, image, depth, mask, class_ids, parameters, a
 
     if config.NUM_PARAMETER_CHANNELS > 0:
         if config.OCCLUSION:
-            depth = utils.resize_mask(depth, scale, padding)            
+            depth = utils.resize_mask(depth, scale, padding)
             mask_visible = utils.minimize_mask(bbox, depth, config.MINI_MASK_SHAPE)
             mask = np.stack([mask, mask_visible], axis=-1)
         else:
@@ -521,7 +521,7 @@ def build_rpn_targets(image_shape, anchors, gt_class_ids, gt_boxes, config):
     ## A crowd box in COCO is a bounding box around several instances. Exclude
     ## them from training. A crowd box is given a negative class ID.
     no_crowd_bool = np.ones([anchors.shape[0]], dtype=bool)
-    
+
     ## Compute overlaps [num_anchors, num_gt_boxes]
     overlaps = utils.compute_overlaps(anchors, gt_boxes)
 

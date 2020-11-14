@@ -9,7 +9,7 @@ import glob
 import cv2
 import os
 
-from utils import *
+from rcnn_utils import *
 from datasets.plane_dataset import *
 
 class InferenceDataset(Dataset):
@@ -17,7 +17,7 @@ class InferenceDataset(Dataset):
 
     def __init__(self, options, config, image_list, camera, random=False):
         """ camera: [fx, fy, cx, cy, image_width, image_height, dummy, dummy, dummy, dummy] """
-        
+
         self.options = options
         self.config = config
         self.random = random
@@ -67,7 +67,7 @@ class InferenceDataset(Dataset):
             pass
 
         image = cv2.resize(image, (640, 480), interpolation=cv2.INTER_LINEAR)
-        camera[[0, 2, 4]] *= 640.0 / camera[4]        
+        camera[[0, 2, 4]] *= 640.0 / camera[4]
         camera[[1, 3, 5]] *= 480.0 / camera[5]
 
         ## The below codes just fill in dummy values for all other data entries which are not used for inference. You can ignore everything except some preprocessing operations on "image".
@@ -154,7 +154,7 @@ class InferenceDataset(Dataset):
 
         ## Add to batch
         rpn_match = rpn_match[:, np.newaxis]
-        image = utils.mold_image(image.astype(np.float32), self.config)
+        image = rcnn_utils.mold_image(image.astype(np.float32), self.config)
 
         depth = np.concatenate([np.zeros((80, 640)), depth, np.zeros((80, 640))], axis=0).astype(np.float32)
         segmentation = np.concatenate([np.full((80, 640), fill_value=-1), segmentation, np.full((80, 640), fill_value=-1)], axis=0).astype(np.float32)

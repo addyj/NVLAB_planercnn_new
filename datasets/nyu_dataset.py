@@ -3,7 +3,7 @@ import glob
 import cv2
 import os
 
-from utils import *
+from rcnn_utils import *
 from datasets.plane_dataset import *
 import h5py
 import scipy.io as sio
@@ -14,7 +14,7 @@ class NYUDataset(Dataset):
         self.options = options
         self.config = config
         self.random = random
-        
+
         #'../../Data/NYU_RGBD/' + split + '/'
         dataPath = options.dataFolder
         self.camera = np.array([5.8262448167737955e+02, 5.8269103270988637e+02, 3.1304475870804731e+02, 2.3844389626620386e+02, 640, 480], dtype=np.float32)
@@ -25,7 +25,7 @@ class NYUDataset(Dataset):
         self.depths = np.array(data['depths'])
         self.images = self.images[indices]
         self.depths = self.depths[indices]
-        
+
         self.anchors = generate_pyramid_anchors(config.RPN_ANCHOR_SCALES,
                                                       config.RPN_ANCHOR_RATIOS,
                                                       config.BACKBONE_SHAPES,
@@ -131,12 +131,12 @@ class NYUDataset(Dataset):
 
         ## Add to batch
         rpn_match = rpn_match[:, np.newaxis]
-        
-        image = utils.mold_image(image.astype(np.float32), self.config)
+
+        image = rcnn_utils.mold_image(image.astype(np.float32), self.config)
 
         depth = np.concatenate([np.zeros((80, 640)), depth, np.zeros((80, 640))], axis=0).astype(np.float32)
         segmentation = np.full((640, 640), fill_value=0)
-        
+
         extrinsics = np.eye(4, dtype=np.float32)
 
         data_pair = [image.transpose((2, 0, 1)).astype(np.float32), image_metas, rpn_match.astype(np.int32), rpn_bbox.astype(np.float32), gt_class_ids.astype(np.int32), gt_boxes.astype(np.float32), gt_masks.transpose((2, 0, 1)).astype(np.float32), gt_parameters[:, :-1].astype(np.float32), depth.astype(np.float32), extrinsics.astype(np.float32), planes.astype(np.float32), segmentation.astype(np.int64), gt_parameters[:, -1].astype(np.int32)]
@@ -145,9 +145,9 @@ class NYUDataset(Dataset):
         data_pair.append(np.zeros(7, np.float32))
 
         data_pair.append(planes)
-        data_pair.append(planes)        
+        data_pair.append(planes)
         data_pair.append(np.zeros((len(planes), len(planes))))
-        data_pair.append(camera)        
+        data_pair.append(camera)
         return data_pair
 
     def __len__(self):

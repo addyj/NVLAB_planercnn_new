@@ -9,7 +9,7 @@ import glob
 import cv2
 import os
 
-from utils import *
+from rcnn_utils import *
 
 class ScanNetScene():
     """ This class handle one scene of the scannet dataset and provide interface for dataloaders """
@@ -20,7 +20,7 @@ class ScanNetScene():
         self.scannetVersion = 2
 
         self.confident_labels, self.layout_labels = confident_labels, layout_labels
-        
+
         self.camera = np.zeros(6)
 
         if self.scannetVersion == 1:
@@ -34,7 +34,7 @@ class ScanNetScene():
                         self.camera[0] = intrinsics[0][0]
                         self.camera[1] = intrinsics[1][1]
                         self.camera[2] = intrinsics[0][2]
-                        self.camera[3] = intrinsics[1][2]                    
+                        self.camera[3] = intrinsics[1][2]
                     elif tokens[0] == "m_colorWidth":
                         self.colorWidth = int(tokens[2])
                     elif tokens[0] == "m_colorHeight":
@@ -61,9 +61,9 @@ class ScanNetScene():
                     if tokens[0] == "fy_depth":
                         self.camera[1] = float(tokens[2])
                     if tokens[0] == "mx_depth":
-                        self.camera[2] = float(tokens[2])                            
+                        self.camera[2] = float(tokens[2])
                     if tokens[0] == "my_depth":
-                        self.camera[3] = float(tokens[2])                            
+                        self.camera[3] = float(tokens[2])
                     elif tokens[0] == "colorWidth":
                         self.colorWidth = int(tokens[2])
                     elif tokens[0] == "colorHeight":
@@ -80,23 +80,23 @@ class ScanNetScene():
             self.depthShift = 1000.0
             self.imagePaths = [scenePath + '/frames/color/' + str(imageIndex) + '.jpg' for imageIndex in range(self.numImages - 1)]
             pass
-            
+
         self.camera[4] = self.depthWidth
         self.camera[5] = self.depthHeight
         self.planes = np.load(scenePath + '/annotation/planes.npy')
 
-        self.plane_info = np.load(scenePath + '/annotation/plane_info.npy')            
+        self.plane_info = np.load(scenePath + '/annotation/plane_info.npy')
         if len(self.plane_info) != len(self.planes):
             print('invalid number of plane info', scenePath + '/annotation/planes.npy', scenePath + '/annotation/plane_info.npy', len(self.plane_info), len(self.planes))
             exit(1)
 
         self.scenePath = scenePath
         return
-        
+
 
     def transformPlanes(self, transformation, planes):
         planeOffsets = np.linalg.norm(planes, axis=-1, keepdims=True)
-        
+
         centers = planes
         centers = np.concatenate([centers, np.ones((planes.shape[0], 1))], axis=-1)
         newCenters = np.transpose(np.matmul(transformation, np.transpose(centers)))
@@ -115,7 +115,7 @@ class ScanNetScene():
 
     def __len__(self):
         return len(self.imagePaths)
-    
+
     def __getitem__(self, imageIndex):
         imagePath = self.imagePaths[imageIndex]
         image = cv2.imread(imagePath)
@@ -128,7 +128,7 @@ class ScanNetScene():
             segmentationPath = imagePath.replace('frames/color/', 'annotation/segmentation/').replace('.jpg', '.png')
             depthPath = imagePath.replace('color', 'depth').replace('.jpg', '.png')
             posePath = imagePath.replace('color', 'pose').replace('.jpg', '.txt')
-            semanticsPath = imagePath.replace('color/', 'instance-filt/').replace('.jpg', '.png')            
+            semanticsPath = imagePath.replace('color/', 'instance-filt/').replace('.jpg', '.png')
             pass
 
         try:
@@ -150,16 +150,16 @@ class ScanNetScene():
         extrinsics[1] = extrinsics[2]
         extrinsics[2] = -temp
 
-        
+
         segmentation = cv2.imread(segmentationPath, -1).astype(np.int32)
-        
+
         segmentation = (segmentation[:, :, 2] * 256 * 256 + segmentation[:, :, 1] * 256 + segmentation[:, :, 0]) // 100 - 1
 
         segments, counts = np.unique(segmentation, return_counts=True)
         segmentList = zip(segments.tolist(), counts.tolist())
         segmentList = [segment for segment in segmentList if segment[0] not in [-1, 167771]]
         segmentList = sorted(segmentList, key=lambda x:-x[1])
-        
+
         newPlanes = []
         newPlaneInfo = []
         newSegmentation = np.full(segmentation.shape, fill_value=-1, dtype=np.int32)
@@ -169,7 +169,7 @@ class ScanNetScene():
             if count < self.options.planeAreaThreshold:
                 continue
             if oriIndex >= len(self.planes):
-                continue            
+                continue
             if np.linalg.norm(self.planes[oriIndex]) < 1e-4:
                 continue
             newPlanes.append(self.planes[oriIndex])
@@ -180,7 +180,7 @@ class ScanNetScene():
 
         segmentation = newSegmentation
         planes = np.array(newPlanes)
-        plane_info = newPlaneInfo        
+        plane_info = newPlaneInfo
 
         image = cv2.resize(image, (depth.shape[1], depth.shape[0]))
 
@@ -191,7 +191,7 @@ class ScanNetScene():
             masks = (np.expand_dims(segmentation, -1) == np.arange(len(planes))).astype(np.float32)
             plane_depth = (plane_depths.transpose((1, 2, 0)) * masks).sum(2)
             plane_mask = masks.max(2)
-            plane_mask *= (depth > 1e-4).astype(np.float32)            
+            plane_mask *= (depth > 1e-4).astype(np.float32)
             plane_area = plane_mask.sum()
             depth_error = (np.abs(plane_depth - depth) * plane_mask).sum() / max(plane_area, 1)
             if depth_error > 0.1:
@@ -199,11 +199,11 @@ class ScanNetScene():
                 planes = []
                 pass
             pass
-        
+
         if len(planes) == 0 or segmentation.max() < 0:
             exit(1)
             pass
-        
+
         info = [image, planes, plane_info, segmentation, depth, self.camera, extrinsics]
 
         if self.load_semantics or self.load_boundary:
@@ -217,7 +217,7 @@ class ScanNetScene():
         if self.load_boundary:
             plane_points = []
             plane_instances = []
-            for plane_index in range(len(planes)):            
+            for plane_index in range(len(planes)):
                 ys, xs = (segmentation == plane_index).nonzero()
                 if len(ys) == 0:
                     plane_points.append(np.zeros(3))
@@ -236,29 +236,29 @@ class ScanNetScene():
                     plane_instances[plane_index] = 65535
                     pass
                 continue
-            
+
             parallelThreshold = np.cos(np.deg2rad(30))
             boundary_map = np.zeros(segmentation.shape)
-            
+
             plane_boundary_masks = []
             for plane_index in range(len(planes)):
                 mask = (segmentation == plane_index).astype(np.uint8)
                 plane_boundary_masks.append(cv2.dilate(mask, np.ones((3, 3)), iterations=15) - cv2.erode(mask, np.ones((3, 3)), iterations=15) > 0.5)
                 continue
-                        
+
 
             for plane_index_1 in range(len(planes)):
                 plane_1 = planes[plane_index_1]
                 offset_1 = np.linalg.norm(plane_1)
-                normal_1 = plane_1 / max(offset_1, 1e-4)                                
+                normal_1 = plane_1 / max(offset_1, 1e-4)
                 for plane_index_2 in range(len(planes)):
                     if plane_index_2 <= plane_index_1:
                         continue
                     if plane_instances[plane_index_1] != plane_instances[plane_index_2] or plane_instances[plane_index_1] == -1:
                         continue
-                    plane_2 = planes[plane_index_2]                    
+                    plane_2 = planes[plane_index_2]
                     offset_2 = np.linalg.norm(plane_2)
-                    normal_2 = plane_2 / max(offset_2, 1e-4)            
+                    normal_2 = plane_2 / max(offset_2, 1e-4)
                     if np.abs(np.dot(normal_2, normal_1)) > parallelThreshold:
                         continue
                     point_1, point_2 = plane_points[plane_index_1], plane_points[plane_index_2]
@@ -278,8 +278,8 @@ class ScanNetScene():
                         boundary_map[boundary_mask] = 2
                     continue
                 continue
-            
+
             info[-1] = boundary_map
             pass
-                
+
         return info

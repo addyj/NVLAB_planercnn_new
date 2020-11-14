@@ -19,12 +19,12 @@ import torch.optim as optim
 import torch.utils.data
 from torch.autograd import Variable
 import torchvision
-import utils
+import rcnn_utils as utils
 from torchvision.ops import nms
 from roialign.roi_align.crop_and_resize import CropAndResizeFunction
 import cv2
 from models.modules import *
-from utils import *
+from rcnn_utils import *
 
 ############################################################
 #  Pytorch Utility Functions
@@ -1397,7 +1397,7 @@ class Decoder3(nn.Module):
         """
         super(Decoder3, self).__init__()
         self.config = config
-        self.build(config=config, C1, C2, C3, C4)
+        self.build(config, C1, C2, C3, C4)
         # self.initialize_weights()
 
     def build(self, config, C1, C2, C3, C4):

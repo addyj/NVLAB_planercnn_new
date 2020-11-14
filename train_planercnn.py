@@ -19,7 +19,7 @@ from models.refinement_net import *
 from models.modules import *
 from datasets.plane_stereo_dataset import *
 
-from utils import *
+from rcnn_utils import *
 from visualize_utils import *
 from evaluate_utils import *
 from options import parse_args

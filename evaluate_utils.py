@@ -6,22 +6,22 @@ Licensed under the CC BY-NC-SA 4.0 license
 
 import cv2
 import numpy as np
-from utils import *
+from rcnn_utils import *
 from models.modules import *
 
 
 def evaluateDepths(predDepths, gtDepths, printInfo=False):
     """Evaluate depth reconstruction accuracy"""
-    
+
     masks = gtDepths > 1e-4
-    
+
     numPixels = float(masks.sum())
-    
+
     rmse = np.sqrt((pow(predDepths - gtDepths, 2) * masks).sum() / numPixels)
     rmse_log = np.sqrt((pow(np.log(np.maximum(predDepths, 1e-4)) - np.log(np.maximum(gtDepths, 1e-4)), 2) * masks).sum() / numPixels)
     log10 = (np.abs(np.log10(np.maximum(predDepths, 1e-4)) - np.log10(np.maximum(gtDepths, 1e-4))) * masks).sum() / numPixels
     rel = (np.abs(predDepths - gtDepths) / np.maximum(gtDepths, 1e-4) * masks).sum() / numPixels
-    rel_sqr = (pow(predDepths - gtDepths, 2) / np.maximum(gtDepths, 1e-4) * masks).sum() / numPixels    
+    rel_sqr = (pow(predDepths - gtDepths, 2) / np.maximum(gtDepths, 1e-4) * masks).sum() / numPixels
     deltas = np.maximum(predDepths / np.maximum(gtDepths, 1e-4), gtDepths / np.maximum(predDepths, 1e-4)) + (1 - masks.astype(np.float32)) * 10000
     accuracy_1 = (deltas < 1.25).sum() / numPixels
     accuracy_2 = (deltas < pow(1.25, 2)).sum() / numPixels
@@ -41,9 +41,9 @@ def evaluatePlanesTensor(input_dict, detection_dict, printInfo=False, use_gpu=Tr
         masks_pred, masks_gt, depth_pred, depth_gt = detection_dict['masks'].cpu(), input_dict['masks'].cpu(), detection_dict['depth'].cpu(), input_dict['depth'].cpu()
         pass
 
-    
+
     masks_pred = torch.round(masks_pred)
-    
+
     plane_areas = masks_gt.sum(dim=1).sum(dim=1)
     masks_intersection = (masks_gt.unsqueeze(1) * (masks_pred.unsqueeze(0))).float()
     intersection_areas = masks_intersection.sum(2).sum(2)
@@ -53,7 +53,7 @@ def evaluatePlanesTensor(input_dict, detection_dict, printInfo=False, use_gpu=Tr
 
     depths_diff = (depth_diff * masks_intersection).sum(2).sum(2) / torch.clamp(intersection_areas, min=1e-4)
     depths_diff[intersection_areas < 1e-4] = 1000000
-    
+
     union = ((masks_gt.unsqueeze(1) + masks_pred.unsqueeze(0)) > 0.5).float().sum(2).sum(2)
     plane_IOUs = intersection_areas / torch.clamp(union, min=1e-4)
 
@@ -63,7 +63,7 @@ def evaluatePlanesTensor(input_dict, detection_dict, printInfo=False, use_gpu=Tr
     intersection_areas = intersection_areas.detach().cpu().numpy()
 
     num_plane_pixels = plane_areas.sum()
-        
+
     pixel_curves = []
     plane_curves = []
 
@@ -76,7 +76,7 @@ def evaluatePlanesTensor(input_dict, detection_dict, printInfo=False, use_gpu=Tr
         for step in range(21):
             diff_threshold = step * stride
             pixel_recall.append(np.minimum((intersection_areas * ((depths_diff <= diff_threshold).astype(np.float32) * IOU_mask)).sum(1), plane_areas).sum() / num_plane_pixels)
-            
+
             plane_recall.append(float((min_diff <= diff_threshold).sum()) / len(masks_gt))
             continue
         pixel_curves.append(pixel_recall)
@@ -107,11 +107,11 @@ def evaluatePlanesTensor(input_dict, detection_dict, printInfo=False, use_gpu=Tr
             continue
         AP += prev_recall * max_precision
         APs.append(AP)
-        continue    
+        continue
 
     detection_dict['flag'] = correct_mask.max(0)
     input_dict['flag'] = correct_mask.max(1)
-    
+
     if printInfo:
         print('plane statistics', correct_mask.max(-1).sum(), num_targets, num_predictions)
         pass
@@ -140,7 +140,7 @@ def evaluatePlaneDepth(config, input_dict, detection_dict, printInfo=False):
     statistics = [plane_diff.mean(), (plane_diff * plane_areas).sum() / plane_areas.sum()]
     if printInfo:
         print('plane statistics', statistics)
-        pass    
+        pass
     return statistics
 
 def evaluateMask(predMasks, gtMasks, printInfo=False):
@@ -157,10 +157,10 @@ def evaluateMasksTensor(predMasks, gtMasks, valid_mask, printInfo=False):
     gtMasks = torch.cat([gtMasks, torch.clamp(1 - gtMasks.sum(0, keepdim=True), min=0)], dim=0)
     predMasks = torch.cat([predMasks, torch.clamp(1 - predMasks.sum(0, keepdim=True), min=0)], dim=0)
     intersection = (gtMasks.unsqueeze(1) * predMasks * valid_mask).sum(-1).sum(-1).float()
-    union = (torch.max(gtMasks.unsqueeze(1), predMasks) * valid_mask).sum(-1).sum(-1).float()    
+    union = (torch.max(gtMasks.unsqueeze(1), predMasks) * valid_mask).sum(-1).sum(-1).float()
 
     N = intersection.sum()
-    
+
     RI = 1 - ((intersection.sum(0).pow(2).sum() + intersection.sum(1).pow(2).sum()) / 2 - intersection.pow(2).sum()) / (N * (N - 1) / 2)
     joint = intersection / N
     marginal_2 = joint.sum(0)
@@ -210,7 +210,7 @@ def evaluateBatchDetection(options, config, input_dict, detection_dict, statisti
 
     padding = 0
     depth_gt = depth_gt[:, 80:560]
-    depth_pred = depth_pred[:, 80:560]        
+    depth_pred = depth_pred[:, 80:560]
 
     nyu_mask = torch.zeros((1, 640, 640)).cuda()
     nyu_mask[:, 80 + 44:80 + 471, 40:601] = 1
@@ -230,8 +230,8 @@ def evaluateBatchDetection(options, config, input_dict, detection_dict, statisti
         statistics[c].append(depth_statistics[:5])
         continue
 
-    statistics[1].append([0, ])    
-    
+    statistics[1].append([0, ])
+
     if options.debug:
         if 'depth_np' in detection_dict:
             depth_pred = detection_dict['depth_np']
@@ -254,7 +254,7 @@ def evaluateBatchDetection(options, config, input_dict, detection_dict, statisti
             evaluateDepths(depth_pred[valid_mask_depth].detach().cpu().numpy(), depth_gt[valid_mask_depth].detach().cpu().numpy(), printInfo=True)
             pass
         pass
-        
+
     statistics[2].append(evaluateMasksTensor(torch.round(detection_dict['masks']).cpu(), input_dict['masks'].float().cpu(), valid_mask.float().cpu(), printInfo=printInfo))
 
     if 'masks' in detection_dict and evaluate_plane:
@@ -266,7 +266,7 @@ def evaluateBatchDetection(options, config, input_dict, detection_dict, statisti
 def printStatisticsDetection(options, statistics):
     if not os.path.exists('logs'):
         os.system("mkdir -p logs")
-        pass    
+        pass
     if not os.path.exists('logs/global.txt'):
         open_type = 'w'
     else:
@@ -291,7 +291,7 @@ def printStatisticsDetection(options, statistics):
         if options.modelType != '':
             name += '_' + options.modelType
             pass
-        
+
         line = options.dataset + ': ' + name + ' statistics:'
         for v in values:
             line += ' %0.3f'%v
@@ -310,11 +310,11 @@ def plotCurves(filename='test/curves.png', xlabel='depth threshold', ylabel='per
     colors = []
     markers = []
     sizes = []
-    
+
     colors.append('blue')
     colors.append('red')
     colors.append('orange')
-    colors.append('purple')    
+    colors.append('purple')
     colors.append('brown')
 
     for _ in range(len(methods)):

@@ -5,7 +5,7 @@ Licensed under the CC BY-NC-SA 4.0 license
 """
 
 import numpy as np
-from utils import *
+from rcnn_utils import *
 
 def getCameraFromInfo(info):
     camera = {}
@@ -15,7 +15,7 @@ def getCameraFromInfo(info):
     camera['cy'] = info[6]
     camera['width'] = info[16]
     camera['height'] = info[17]
-    camera['depth_shift'] = info[18]    
+    camera['depth_shift'] = info[18]
     return camera
 
 def one_hot(values, depth):
@@ -38,7 +38,7 @@ def calcNormal(depth, info):
     urange = urange.reshape(1, -1).repeat(height, 0)
     vrange = (np.arange(height, dtype=np.float32) / (height) * (camera['height']) - camera['cy']) / camera['fy']
     vrange = vrange.reshape(-1, 1).repeat(width, 1)
-    
+
     X = depth * urange
     Y = depth
     Z = -depth * vrange
@@ -61,7 +61,7 @@ def calcNormal(depth, info):
         planePoints = planePoints[np.linalg.norm(planePoints, axis=-1) > 1e-4]
 
         planePoints = planePoints[np.abs(planePoints[:, 1] - points[index][1]) < 0.05]
-            
+
         try:
             plane = fitPlane(planePoints)
             normals.append(-plane / np.maximum(np.linalg.norm(plane), 1e-4))
@@ -77,7 +77,7 @@ def calcNormal(depth, info):
     return normal
 
 def getSegmentationsGraphCut(planes, image, depth, normal, semantics, info, parameters={}):
-    
+
     height = depth.shape[0]
     width = depth.shape[1]
 
@@ -88,7 +88,7 @@ def getSegmentationsGraphCut(planes, image, depth, normal, semantics, info, para
     urange = urange.reshape(1, -1).repeat(height, 0)
     vrange = (np.arange(height, dtype=np.float32) / (height) * (camera['height']) - camera['cy']) / camera['fy']
     vrange = vrange.reshape(-1, 1).repeat(width, 1)
-    
+
     X = depth * urange
     Y = depth
     Z = -depth * vrange
@@ -118,17 +118,17 @@ def getSegmentationsGraphCut(planes, image, depth, normal, semantics, info, para
 
     cv2.imwrite('test/distance_cost.png', drawSegmentationImage(-distanceCost.reshape((height, width, -1)), unaryCost.shape[-1] - 1))
     cv2.imwrite('test/normal_cost.png', drawSegmentationImage(-normalCost.reshape((height, width, -1)), unaryCost.shape[-1] - 1))
-    cv2.imwrite('test/unary_cost.png', drawSegmentationImage(-unaryCost.reshape((height, width, -1)), blackIndex=unaryCost.shape[-1] - 1))    
+    cv2.imwrite('test/unary_cost.png', drawSegmentationImage(-unaryCost.reshape((height, width, -1)), blackIndex=unaryCost.shape[-1] - 1))
     cv2.imwrite('test/segmentation.png', drawSegmentationImage(unaries.reshape((height, width, -1)), blackIndex=numPlanes))
 
 
     nodes = np.arange(height * width).reshape((height, width))
 
     image = image.astype(np.float32)
-    colors = image.reshape((-1, 3))    
+    colors = image.reshape((-1, 3))
 
-    deltas = [(0, 1), (1, 0), (-1, 1), (1, 1)]    
-    
+    deltas = [(0, 1), (1, 0), (-1, 1), (1, 1)]
+
     intensityDifferenceSum = 0.0
     intensityDifferenceCount = 0
     for delta in deltas:
@@ -140,7 +140,7 @@ def getSegmentationsGraphCut(planes, image, depth, normal, semantics, info, para
         continue
     intensityDifference = intensityDifferenceSum / intensityDifferenceCount
 
-    
+
     edges = []
     edges_features = []
     pairwise_matrix = 1 - np.diag(np.ones(numPlanes + 1))
@@ -152,7 +152,7 @@ def getSegmentationsGraphCut(planes, image, depth, normal, semantics, info, para
         edges.append(np.stack([partial_nodes, partial_nodes + (deltaY * width + deltaX)], axis=1))
 
         colorDiff = np.sum(pow(colors[partial_nodes] - colors[partial_nodes + (deltaY * width + deltaX)], 2), axis=1)
-        
+
         pairwise_cost = np.expand_dims(pairwise_matrix, 0) * np.reshape(1 + 45 * np.exp(-colorDiff / intensityDifference), [-1, 1, 1])
         edges_features.append(pairwise_cost)
         continue
@@ -183,7 +183,7 @@ def getSegmentationsGraphCut(planes, image, depth, normal, semantics, info, para
                 continue
             continue
         pass
-    
+
     return refined_segmentation
 
 def fitPlanesNYU(image, depth, normal, semantics, info, numOutputPlanes=20, local=-1, parameters={}):
@@ -219,7 +219,7 @@ def fitPlanesNYU(image, depth, normal, semantics, info, numOutputPlanes=20, loca
     else:
         local = 0.2
         pass
-    
+
     for y in range(5, height, 10):
         for x in range(5, width, 10):
             if invalidDepthMask[y][x]:
@@ -229,7 +229,7 @@ def fitPlanesNYU(image, depth, normal, semantics, info, numOutputPlanes=20, loca
             if sampledPoints.shape[0] < 3:
                 continue
             sampledPoints = sampledPoints[np.random.choice(np.arange(sampledPoints.shape[0]), size=(3))]
-            
+
             try:
                 plane = fitPlane(sampledPoints)
                 pass
@@ -240,22 +240,22 @@ def fitPlanesNYU(image, depth, normal, semantics, info, numOutputPlanes=20, loca
             inlierIndices = diff < distanceThreshold
             if np.sum(inlierIndices) < planeAreaThreshold:
                 continue
-            
+
             planes.append(plane)
             planeMasks.append(inlierIndices.reshape((height, width)))
             continue
         continue
-    
+
     planes = np.array(planes)
     planeList = zip(planes, planeMasks)
     planeList = sorted(planeList, key=lambda x:-x[1].sum())
     planes, planeMasks = zip(*planeList)
 
-    
+
     invalidMask = np.zeros((height, width), np.bool)
     validPlanes = []
     validPlaneMasks = []
-    
+
     for planeIndex, plane in enumerate(planes):
         planeMask = planeMasks[planeIndex]
         if np.logical_and(planeMask, invalidMask).sum() > planeMask.sum() * 0.5:
@@ -268,20 +268,20 @@ def fitPlanesNYU(image, depth, normal, semantics, info, numOutputPlanes=20, loca
     planes = np.array(validPlanes)
     planesD = 1 / np.maximum(np.linalg.norm(planes, 2, 1, keepdims=True), 1e-4)
     planes *= pow(planesD, 2)
-    
+
     planeMasks = np.stack(validPlaneMasks, axis=2)
-    
+
     cv2.imwrite('test/depth.png', drawDepthImage(depth))
     for planeIndex in range(planes.shape[0]):
         cv2.imwrite('test/mask_' + str(planeIndex) + '.png', drawMaskImage(planeMasks[:, :, planeIndex]))
         continue
 
     print('number of planes: ' + str(planes.shape[0]))
-    
+
     planeSegmentation = getSegmentationsGraphCut(planes, image, depth, normal, semantics, info, parameters=parameters)
 
     cv2.imwrite('test/segmentation_refined.png', drawSegmentationImage(planeSegmentation, blackIndex=planes.shape[0]))
-    
+
     return planes, planeSegmentation
 
 def readProposalInfo(info, proposals):
@@ -304,7 +304,7 @@ def fitPlanesManhattan(image, depth, normal, info, numOutputPlanes=20, imageInde
         meanshift = sklearn.cluster.MeanShift(parameters['meanshift'])
         pass
 
-    
+
     height = depth.shape[0]
     width = depth.shape[1]
 
@@ -313,7 +313,7 @@ def fitPlanesManhattan(image, depth, normal, info, numOutputPlanes=20, imageInde
     urange = urange.reshape(1, -1).repeat(height, 0)
     vrange = (np.arange(height, dtype=np.float32) / (height) * (camera['height']) - camera['cy']) / camera['fy']
     vrange = vrange.reshape(-1, 1).repeat(width, 1)
-    
+
     X = depth * urange
     Y = depth
     Z = -depth * vrange
@@ -323,10 +323,10 @@ def fitPlanesManhattan(image, depth, normal, info, numOutputPlanes=20, imageInde
     normals = normals / np.maximum(np.linalg.norm(normals, axis=-1, keepdims=True), 1e-4)
 
     validMask = np.logical_and(np.linalg.norm(normals, axis=-1) > 1e-4, depth.reshape(-1) > 1e-4)
-    
+
     valid_normals = normals[validMask]
 
-    
+
     points = np.stack([X, Y, Z], axis=2).reshape(-1, 3)
     valid_points = points[validMask]
 
@@ -338,8 +338,8 @@ def fitPlanesManhattan(image, depth, normal, info, numOutputPlanes=20, imageInde
     normalBins = np.stack([np.sin(polarAngles) * np.cos(azimuthalAngles), np.tile(np.cos(polarAngles), [1, azimuthalAngles.shape[1]]), -np.sin(polarAngles) * np.sin(azimuthalAngles)], axis=2)
     normalBins = np.reshape(normalBins, [-1, 3])
     numBins = normalBins.shape[0]
-    
-    
+
+
     normalDiff = np.tensordot(valid_normals, normalBins, axes=([1], [1]))
     normalDiffSign = np.sign(normalDiff)
     normalDiff = np.maximum(normalDiff, -normalDiff)
@@ -355,25 +355,25 @@ def fitPlanesManhattan(image, depth, normal, info, numOutputPlanes=20, imageInde
 
     dotThreshold_1 = np.cos(np.deg2rad(100))
     dotThreshold_2 = np.cos(np.deg2rad(80))
-    
+
     dot_1 = np.tensordot(normalBins, dominantNormal_1, axes=([1], [0]))
     bins[np.logical_or(dot_1 < dotThreshold_1, dot_1 > dotThreshold_2)] = 0
     dominantNormal_2 = averageNormals[np.argmax(bins)]
     dot_2 = np.tensordot(normalBins, dominantNormal_2, axes=([1], [0]))
     bins[np.logical_or(dot_2 < dotThreshold_1, dot_2 > dotThreshold_2)] = 0
-    
+
     dominantNormal_3 = averageNormals[np.argmax(bins)]
 
 
     dominantNormals = np.stack([dominantNormal_1, dominantNormal_2, dominantNormal_3], axis=0)
 
     dominantNormalImage = np.abs(np.matmul(normal, dominantNormals.transpose()))
-    
+
     planeHypothesisAreaThreshold = width * height * 0.01
 
-    
+
     planes = []
-    
+
     if 'offsetGap' in parameters:
         offsetGap = parameters['offsetGap']
     else:
@@ -389,7 +389,7 @@ def fitPlanesManhattan(image, depth, normal, info, numOutputPlanes=20, imageInde
             for offset in meanshift.cluster_centers_:
                 planes.append(dominantNormal * offset)
                 continue
-            
+
         offset = offsets.min()
         maxOffset = offsets.max()
         while offset < maxOffset:
@@ -403,10 +403,10 @@ def fitPlanesManhattan(image, depth, normal, info, numOutputPlanes=20, imageInde
             offset = planeD + offsetGap
             continue
         continue
-    
+
     if len(planes) == 0:
         return np.array([]), np.zeros(segmentation.shape).astype(np.int32)
-    
+
     planes = np.array(planes)
     print('number of planes ', planes.shape[0])
 
@@ -436,7 +436,7 @@ def fitPlanesManhattan(image, depth, normal, info, numOutputPlanes=20, imageInde
             neighborsMaxY = np.maximum(np.minimum(np.ceil(neighborsY).astype(np.int32), height - 1), 0)
             indices_1 = neighborsMinY * width + neighborsMinX
             indices_2 = neighborsMaxY * width + neighborsMinX
-            indices_3 = neighborsMinY * width + neighborsMaxX            
+            indices_3 = neighborsMinY * width + neighborsMaxX
             indices_4 = neighborsMaxY * width + neighborsMaxX
             areas_1 = (neighborsMaxX - neighborsX) * (neighborsMaxY - neighborsY)
             areas_2 = (neighborsMaxX - neighborsX) * (neighborsY - neighborsMinY)
@@ -452,10 +452,10 @@ def fitPlanesManhattan(image, depth, normal, info, numOutputPlanes=20, imageInde
 
         deltaUs, deltaVs = np.meshgrid(np.arange(windowW) - (windowW - 1) / 2, np.arange(windowH) - (windowH - 1) / 2)
         deltas = deltaUs.reshape((1, -1, 1)) * np.expand_dims(horizontalDirection, axis=1) + deltaVs.reshape((1, -1, 1)) * np.expand_dims(verticalDirection, axis=1)
-        
+
         windowIndices = np.expand_dims(uv, 1) - deltas
         windowIndices = (np.minimum(np.maximum(np.round(windowIndices[:, :, 1]), 0), height - 1) * width + np.minimum(np.maximum(np.round(windowIndices[:, :, 0]), 0), width - 1)).astype(np.int32)
-        
+
         dominantLineMap = []
 
         for pixels in windowIndices:
@@ -472,7 +472,7 @@ def fitPlanesManhattan(image, depth, normal, info, numOutputPlanes=20, imageInde
         pass
 
     smoothnessWeightMask = dominantLineMaps.max(2) > dominantLineThreshold
-    
+
     planesD = np.linalg.norm(planes, axis=1, keepdims=True)
     planeNormals = planes / np.maximum(planesD, 1e-4)
 
@@ -482,26 +482,26 @@ def fitPlanesManhattan(image, depth, normal, info, numOutputPlanes=20, imageInde
     else:
         distanceCostThreshold = 0.05
         pass
-    
+
     distanceCost = np.abs(np.tensordot(points, planeNormals, axes=([1, 1])) - np.reshape(planesD, [1, -1])) / distanceCostThreshold
 
     normalCost = 0
-    normalCostThreshold = 1 - np.cos(np.deg2rad(30))        
+    normalCostThreshold = 1 - np.cos(np.deg2rad(30))
     normalCost = (1 - np.abs(np.tensordot(normals, planeNormals, axes=([1, 1])))) / normalCostThreshold
-    
+
     unaryCost = distanceCost + normalCost
     unaryCost *= np.expand_dims(validMask.astype(np.float32), -1)
     unaries = unaryCost.reshape((width * height, -1))
 
     if False:
         cv2.imwrite('test/dominant_normal.png', drawMaskImage(dominantNormalImage))
-        
+
         if imageIndex >= 0:
             cv2.imwrite('test/' + str(imageIndex) + '_dominant_lines.png', drawMaskImage(dominantLineMaps / dominantLineThreshold))
         else:
             cv2.imwrite('test/dominant_lines.png', drawMaskImage(dominantLineMaps / dominantLineThreshold))
             pass
-        cv2.imwrite('test/dominant_lines_mask.png', drawMaskImage(smoothnessWeightMask))            
+        cv2.imwrite('test/dominant_lines_mask.png', drawMaskImage(smoothnessWeightMask))
         cv2.imwrite('test/distance_cost.png', drawSegmentationImage(-distanceCost.reshape((height, width, -1)), unaryCost.shape[-1] - 1))
         cv2.imwrite('test/normal_cost.png', drawSegmentationImage(-normalCost.reshape((height, width, -1)), unaryCost.shape[-1] - 1))
         cv2.imwrite('test/unary_cost.png', drawSegmentationImage(-unaryCost.reshape((height, width, -1)), blackIndex=unaryCost.shape[-1] - 1))
@@ -516,17 +516,17 @@ def fitPlanesManhattan(image, depth, normal, info, numOutputPlanes=20, imageInde
     numProposals = min(numProposals, unaries.shape[-1] - 1)
     proposals = np.argpartition(unaries, numProposals)[:, :numProposals]
     proposals[np.logical_not(validMask)] = 0
-    
+
     unaries = -readProposalInfo(unaries, proposals).reshape((-1, numProposals))
-    
+
     nodes = np.arange(height * width).reshape((height, width))
 
     deltas = [(0, 1), (1, 0)]
-    
+
     edges = []
     edges_features = []
     smoothnessWeights = 1 - 0.99 * smoothnessWeightMask.astype(np.float32)
-    
+
     for delta in deltas:
         deltaX = delta[0]
         deltaY = delta[1]
@@ -550,7 +550,7 @@ def fitPlanesManhattan(image, depth, normal, info, numOutputPlanes=20, imageInde
     print('start')
     refined_segmentation = inference_ogm(unaries, -edges_features * smoothnessWeight, edges, return_energy=False, alg='trw')
     print('done')
-    
+
     refined_segmentation = refined_segmentation.reshape([height, width, 1])
     refined_segmentation = readProposalInfo(proposals, refined_segmentation)
     planeSegmentation = refined_segmentation.reshape([height, width])
@@ -558,7 +558,7 @@ def fitPlanesManhattan(image, depth, normal, info, numOutputPlanes=20, imageInde
     planeSegmentation[np.logical_not(validMask.reshape((height, width)))] = planes.shape[0]
 
     cv2.imwrite('test/segmentation_refined.png', drawSegmentationImage(planeSegmentation))
-    
+
     return planes, planeSegmentation
 
 def calcVanishingPoint(lines):
@@ -573,9 +573,9 @@ def calcVanishingPoint(lines):
     else:
         VP = np.linalg.lstsq(normals, normalPointDot)[0]
         pass
-    
+
     return VP
-    
+
 def calcVanishingPoints(allLines, numVPs):
     distanceThreshold = np.sin(np.deg2rad(5))
     lines = allLines.copy()
@@ -625,9 +625,9 @@ def fitPlanesPiecewise(image, depth, normal, info, numOutputPlanes=20, imageInde
         import sklearn.cluster
         meanshift = sklearn.cluster.MeanShift(parameters['meanshift'])
         pass
-    
+
     from pylsd import lsd
-    
+
     height = depth.shape[0]
     width = depth.shape[1]
 
@@ -636,7 +636,7 @@ def fitPlanesPiecewise(image, depth, normal, info, numOutputPlanes=20, imageInde
     urange = urange.reshape(1, -1).repeat(height, 0)
     vrange = (np.arange(height, dtype=np.float32) / (height) * (camera['height']) - camera['cy']) / camera['fy']
     vrange = vrange.reshape(-1, 1).repeat(width, 1)
-    
+
     X = depth * urange
     Y = depth
     Z = -depth * vrange
@@ -645,10 +645,10 @@ def fitPlanesPiecewise(image, depth, normal, info, numOutputPlanes=20, imageInde
     normals = normal.reshape((-1, 3))
     normals = normals / np.maximum(np.linalg.norm(normals, axis=-1, keepdims=True), 1e-4)
     validMask = np.logical_and(np.linalg.norm(normals, axis=-1) > 1e-4, depth.reshape(-1) > 1e-4)
-    
+
     points = np.stack([X, Y, Z], axis=2).reshape(-1, 3)
     valid_points = points[validMask]
-    
+
     lines = lsd(image.mean(2))
 
     lineImage = image.copy()
@@ -660,13 +660,13 @@ def fitPlanesPiecewise(image, depth, normal, info, numOutputPlanes=20, imageInde
     numVPs = 3
     VPs, VPLines, remainingLines = calcVanishingPoints(lines, numVPs=numVPs)
 
-    lineImage = image.copy()    
+    lineImage = image.copy()
     for VPIndex, lines in enumerate(VPLines):
         for line in lines:
             cv2.line(lineImage, (int(line[0]), int(line[1])), (int(line[2]), int(line[3])), ((VPIndex == 0) * 255, (VPIndex == 1) * 255, (VPIndex == 2) * 255), int(np.ceil(line[4] / 2)))
             continue
         continue
-    cv2.imwrite('test/lines_vp.png', lineImage)    
+    cv2.imwrite('test/lines_vp.png', lineImage)
 
     dominantNormals = np.stack([(VPs[:, 0] * info[16] / width - info[2]) / info[0], np.ones(numVPs), -(VPs[:, 1] * info[17] / height - info[6]) / info[5]], axis=1)
     dominantNormals /= np.maximum(np.linalg.norm(dominantNormals, axis=1, keepdims=True), 1e-4)
@@ -682,12 +682,12 @@ def fitPlanesPiecewise(image, depth, normal, info, numOutputPlanes=20, imageInde
 
     print(VPs)
     print(dominantNormals)
-    
+
     dominantNormalImage = np.abs(np.matmul(normal, dominantNormals.transpose()))
     cv2.imwrite('test/dominant_normal.png', drawMaskImage(dominantNormalImage))
-    
+
     planeHypothesisAreaThreshold = width * height * 0.01
-    
+
     planes = []
     vpPlaneIndices = []
     if 'offsetGap' in parameters:
@@ -724,18 +724,18 @@ def fitPlanesPiecewise(image, depth, normal, info, numOutputPlanes=20, imageInde
 
                 continue
             pass
-        
+
 
         vpPlaneIndices.append(np.arange(planeIndexOffset, len(planes)))
         planeIndexOffset = len(planes)
         continue
 
     if len(planes) == 0:
-        return np.array([]), np.zeros(segmentation.shape).astype(np.int32)    
+        return np.array([]), np.zeros(segmentation.shape).astype(np.int32)
     planes = np.array(planes)
 
-    
-    
+
+
     planesD = np.linalg.norm(planes, axis=1, keepdims=True)
     planeNormals = planes / np.maximum(planesD, 1e-4)
 
@@ -748,7 +748,7 @@ def fitPlanesPiecewise(image, depth, normal, info, numOutputPlanes=20, imageInde
 
     distanceCost = np.abs(np.tensordot(points, planeNormals, axes=([1, 1])) - np.reshape(planesD, [1, -1])) / distanceCostThreshold
 
-    normalCostThreshold = 1 - np.cos(np.deg2rad(30))        
+    normalCostThreshold = 1 - np.cos(np.deg2rad(30))
     normalCost = (1 - np.abs(np.tensordot(normals, planeNormals, axes=([1, 1])))) / normalCostThreshold
 
     if 'normalWeight' in parameters:
@@ -756,12 +756,12 @@ def fitPlanesPiecewise(image, depth, normal, info, numOutputPlanes=20, imageInde
     else:
         normalWeight = 1
         pass
-    
+
     unaryCost = distanceCost + normalCost * normalWeight
-    unaryCost *= np.expand_dims(validMask.astype(np.float32), -1)    
+    unaryCost *= np.expand_dims(validMask.astype(np.float32), -1)
     unaries = unaryCost.reshape((width * height, -1))
-    
-    
+
+
     print('number of planes ', planes.shape[0])
     cv2.imwrite('test/distance_cost.png', drawSegmentationImage(-distanceCost.reshape((height, width, -1)), unaryCost.shape[-1] - 1))
 
@@ -770,7 +770,7 @@ def fitPlanesPiecewise(image, depth, normal, info, numOutputPlanes=20, imageInde
     cv2.imwrite('test/unary_cost.png', drawSegmentationImage(-unaryCost.reshape((height, width, -1)), blackIndex=unaryCost.shape[-1] - 1))
 
     cv2.imwrite('test/segmentation.png', drawSegmentationImage(-unaries.reshape((height, width, -1)), blackIndex=unaries.shape[-1]))
-    
+
 
     if 'numProposals' in parameters:
         numProposals = parameters['numProposals']
@@ -779,18 +779,18 @@ def fitPlanesPiecewise(image, depth, normal, info, numOutputPlanes=20, imageInde
         pass
 
     numProposals = min(numProposals, unaries.shape[-1] - 1)
-    
+
     proposals = np.argpartition(unaries, numProposals)[:, :numProposals]
     unaries = -readProposalInfo(unaries, proposals).reshape((-1, numProposals))
-    
+
     nodes = np.arange(height * width).reshape((height, width))
 
     deltas = [(0, 1), (1, 0)]
-    
+
     edges = []
     edges_features = []
-            
-                
+
+
     for delta in deltas:
         deltaX = delta[0]
         deltaY = delta[1]
@@ -799,7 +799,7 @@ def fitPlanesPiecewise(image, depth, normal, info, numOutputPlanes=20, imageInde
 
         labelDiff = (np.expand_dims(proposals[partial_nodes], -1) != np.expand_dims(proposals[partial_nodes + (deltaY * width + deltaX)], 1)).astype(np.float32)
 
-        
+
         edges_features.append(labelDiff)
         continue
 
@@ -811,11 +811,11 @@ def fitPlanesPiecewise(image, depth, normal, info, numOutputPlanes=20, imageInde
         edgeWeights = parameters['edgeWeights']
     else:
         edgeWeights = [0.5, 0.6, 0.6]
-        pass    
-    
+        pass
+
     lineSets = np.zeros((height * width, 3))
     creaseLines = np.expand_dims(np.stack([planeNormals[:, 0] / info[0], planeNormals[:, 1], -planeNormals[:, 2] / info[5]], axis=1), 1) * planesD.reshape((1, -1, 1))
-    creaseLines = creaseLines - np.transpose(creaseLines, [1, 0, 2])    
+    creaseLines = creaseLines - np.transpose(creaseLines, [1, 0, 2])
     for planeIndex_1 in xrange(planes.shape[0]):
         for planeIndex_2 in xrange(planeIndex_1 + 1, planes.shape[0]):
             creaseLine = creaseLines[planeIndex_1, planeIndex_2]
@@ -835,7 +835,7 @@ def fitPlanesPiecewise(image, depth, normal, info, numOutputPlanes=20, imageInde
                     pixel_1 = vs[index] * width + minUs[index]
                     pixel_2 = vs[index] * width + maxUs[index]
                     proposals_1 = proposals[pixel_1]
-                    proposals_2 = proposals[pixel_2]                    
+                    proposals_2 = proposals[pixel_2]
                     if planeIndex_1 in proposals_1 and planeIndex_2 in proposals_2:
                         proposalIndex_1 = np.where(proposals_1 == planeIndex_1)[0][0]
                         proposalIndex_2 = np.where(proposals_2 == planeIndex_2)[0][0]
@@ -857,16 +857,16 @@ def fitPlanesPiecewise(image, depth, normal, info, numOutputPlanes=20, imageInde
                 maxVs = minVs + 1
                 validIndicesMask = np.logical_and(minVs >= 0, maxVs < height)
                 if validIndicesMask.sum() == 0:
-                    continue                
+                    continue
                 us = us[validIndicesMask]
                 minVs = minVs[validIndicesMask]
-                maxVs = maxVs[validIndicesMask]                
+                maxVs = maxVs[validIndicesMask]
                 edgeIndices = (minVs * width + us)
                 for index, edgeIndex in enumerate(edgeIndices):
                     pixel_1 = minVs[index] * width + us[index]
                     pixel_2 = maxVs[index] * width + us[index]
                     proposals_1 = proposals[pixel_1]
-                    proposals_2 = proposals[pixel_2]                    
+                    proposals_2 = proposals[pixel_2]
                     if planeIndex_1 in proposals_1 and planeIndex_2 in proposals_2:
                         proposalIndex_1 = np.where(proposals_1 == planeIndex_1)[0][0]
                         proposalIndex_2 = np.where(proposals_2 == planeIndex_2)[0][0]
@@ -879,7 +879,7 @@ def fitPlanesPiecewise(image, depth, normal, info, numOutputPlanes=20, imageInde
                         pass
                     continue
                 lineSets[minVs * width + us, 0] = 1
-                lineSets[maxVs * width + us, 0] = 1                
+                lineSets[maxVs * width + us, 0] = 1
                 pass
             continue
         continue
@@ -892,7 +892,7 @@ def fitPlanesPiecewise(image, depth, normal, info, numOutputPlanes=20, imageInde
         planeHorizontalVPMask[planeIndices] = False
         continue
 
-    
+
     for VPIndex, lines in enumerate(VPLines):
         lp = lines[:, :2]
         ln = lines[:, 2:4] - lines[:, :2]
@@ -909,13 +909,13 @@ def fitPlanesPiecewise(image, depth, normal, info, numOutputPlanes=20, imageInde
                 validIndicesMask = np.logical_and(minUs >= 0, maxUs < width)
                 vs = vs[validIndicesMask]
                 minUs = minUs[validIndicesMask]
-                maxUs = maxUs[validIndicesMask]                
+                maxUs = maxUs[validIndicesMask]
                 edgeIndices = (height - 1) * width + (vs * (width - 1) + minUs)
                 for index, edgeIndex in enumerate(edgeIndices):
                     pixel_1 = vs[index] * width + minUs[index]
                     pixel_2 = vs[index] * width + maxUs[index]
                     proposals_1 = proposals[pixel_1]
-                    proposals_2 = proposals[pixel_2]                    
+                    proposals_2 = proposals[pixel_2]
                     for proposalIndex_1, planeIndex_1 in enumerate(proposals_1):
                         if not planeHorizontalVPMask[planeIndex_1][VPIndex]:
                             continue
@@ -932,19 +932,19 @@ def fitPlanesPiecewise(image, depth, normal, info, numOutputPlanes=20, imageInde
             else:
                 us = np.arange(width)
                 vs = (occlusionLine[2] - us * occlusionLine[0]) / occlusionLine[1]
-                
+
                 minVs = np.floor(vs).astype(np.int32)
                 maxVs = minVs + 1
                 validIndicesMask = np.logical_and(minVs >= 0, maxVs < height)
                 us = us[validIndicesMask]
                 minVs = minVs[validIndicesMask]
-                maxVs = maxVs[validIndicesMask]                
+                maxVs = maxVs[validIndicesMask]
                 edgeIndices = (minVs * width + us)
                 for index, edgeIndex in enumerate(edgeIndices):
                     pixel_1 = minVs[index] * width + us[index]
                     pixel_2 = maxVs[index] * width + us[index]
                     proposals_1 = proposals[pixel_1]
-                    proposals_2 = proposals[pixel_2]                    
+                    proposals_2 = proposals[pixel_2]
                     for proposalIndex_1, planeIndex_1 in enumerate(proposals_1):
                         if not planeHorizontalVPMask[planeIndex_1][VPIndex]:
                             continue
@@ -957,7 +957,7 @@ def fitPlanesPiecewise(image, depth, normal, info, numOutputPlanes=20, imageInde
                         continue
                     continue
                 lineSets[minVs * width + us, 1] = 1
-                lineSets[maxVs * width + us, 1] = 1                
+                lineSets[maxVs * width + us, 1] = 1
                 pass
             continue
         continue
@@ -974,20 +974,20 @@ def fitPlanesPiecewise(image, depth, normal, info, numOutputPlanes=20, imageInde
             validIndicesMask = np.logical_and(minUs >= 0, maxUs < width)
             vs = vs[validIndicesMask]
             minUs = minUs[validIndicesMask]
-            maxUs = maxUs[validIndicesMask]                
+            maxUs = maxUs[validIndicesMask]
             edgeIndices = (height - 1) * width + (vs * (width - 1) + minUs)
             for edgeIndex in edgeIndices:
                 edges_features[edgeIndex] *= edgeWeights[2]
                 continue
             lineSets[(vs * width + minUs), 2] = 1
-            lineSets[(vs * width + maxUs), 2] = 1            
+            lineSets[(vs * width + maxUs), 2] = 1
         else:
             if line[2] < line[0]:
                 line = np.array([line[2], line[3], line[0], line[1]])
                 pass
             us = np.arange(line[0], line[2] + 1, dtype=np.int32)
             vs = line[1] + (us - line[0]) / (line[2] - line[0]) * (line[3] - line[1])
-            
+
             minVs = np.floor(vs).astype(np.int32)
             maxVs = minVs + 1
             validIndicesMask = np.logical_and(minVs >= 0, maxVs < height)
@@ -1003,7 +1003,7 @@ def fitPlanesPiecewise(image, depth, normal, info, numOutputPlanes=20, imageInde
             continue
         continue
     cv2.imwrite('test/line_sets.png', drawMaskImage(lineSets.reshape((height, width, 3))))
-    
+
 
     if 'smoothnessWeight' in parameters:
         smoothnessWeight = parameters['smoothnessWeight']
@@ -1014,18 +1014,18 @@ def fitPlanesPiecewise(image, depth, normal, info, numOutputPlanes=20, imageInde
     print('start')
     refined_segmentation = inference_ogm(unaries, -edges_features * smoothnessWeight, edges, return_energy=False, alg='trw')
     print('done')
-    refined_segmentation = refined_segmentation.reshape([height, width, 1])    
+    refined_segmentation = refined_segmentation.reshape([height, width, 1])
     refined_segmentation = readProposalInfo(proposals, refined_segmentation)
     planeSegmentation = refined_segmentation.reshape([height, width])
 
-    planeSegmentation[np.logical_not(validMask.reshape((height, width)))] = planes.shape[0]    
+    planeSegmentation[np.logical_not(validMask.reshape((height, width)))] = planes.shape[0]
     cv2.imwrite('test/segmentation_refined.png', drawSegmentationImage(planeSegmentation))
-    
+
     return planes, planeSegmentation
 
 if __name__ == '__main__':
     from pystruct.inference import get_installed, inference_ogm, inference_dispatch
-    
+
     input_dict = np.load('test/input_dict.npy')[()]
     input_dict['normal'] = calcNormal(input_dict['depth'], input_dict['info'])
 
@@ -1043,7 +1043,7 @@ if __name__ == '__main__':
         else:
             parameters = {'numProposals': 5, 'distanceCostThreshold': 0.1, 'smoothnessWeight': 100, 'dominantLineThreshold': 3, 'offsetGap': 0.6}
             pass
-        pred_p, pred_s = fitPlanesManhattan(input_dict['image'], input_dict['depth'], input_dict['normal'], input_dict['info'], numOutputPlanes=20, parameters=parameters)                    
+        pred_p, pred_s = fitPlanesManhattan(input_dict['image'], input_dict['depth'], input_dict['normal'], input_dict['info'], numOutputPlanes=20, parameters=parameters)
     elif 'piecewise' in modelType:
         if 'gt' in modelType:
             parameters = {'distanceCostThreshold': 0.1, 'smoothnessWeight': 300, 'numProposals': 5, 'normalWeight': 1, 'meanshift': 0.2}

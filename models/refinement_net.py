@@ -11,7 +11,7 @@ import numpy as np
 import os
 
 from models.modules import *
-from utils import *
+from rcnn_utils import *
 
 class RefinementBlockParameter(torch.nn.Module):
    def __init__(self):
@@ -26,7 +26,7 @@ class RefinementBlockParameter(torch.nn.Module):
 
    def sim(self, x):
        return (x.unsqueeze(1) * x).mean(-1, keepdim=True)
-   
+
    def forward(self, parameters, mask_features):
        x = self.linear_2(self.linear_1(parameters))
        x = torch.cat([x, mask_features / 100], dim=-1)
@@ -34,32 +34,32 @@ class RefinementBlockParameter(torch.nn.Module):
        x = (self.linear_4(x) * self.sim(x)).mean(1)
        x = (self.linear_5(x) * self.sim(x)).mean(1)
        return self.pred(x)
-   
+
 class RefinementBlockMask(torch.nn.Module):
    def __init__(self, options):
        super(RefinementBlockMask, self).__init__()
        self.options = options
        use_bn = False
        self.conv_0 = ConvBlock(3 + 5 + 2, 32, kernel_size=3, stride=1, padding=1, use_bn=use_bn)
-       self.conv_1 = ConvBlock(64, 64, kernel_size=3, stride=2, padding=1, use_bn=use_bn)       
+       self.conv_1 = ConvBlock(64, 64, kernel_size=3, stride=2, padding=1, use_bn=use_bn)
        self.conv_1_1 = ConvBlock(128, 64, kernel_size=3, stride=1, padding=1, use_bn=use_bn)
        self.conv_2 = ConvBlock(128, 128, kernel_size=3, stride=2, padding=1, use_bn=use_bn)
        self.conv_2_1 = ConvBlock(256, 128, kernel_size=3, stride=1, padding=1, use_bn=use_bn)
 
        self.up_2 = ConvBlock(128, 64, kernel_size=4, stride=2, padding=1, mode='deconv', use_bn=use_bn)
-       self.up_1 = ConvBlock(128, 32, kernel_size=4, stride=2, padding=1, mode='deconv', use_bn=use_bn)              
+       self.up_1 = ConvBlock(128, 32, kernel_size=4, stride=2, padding=1, mode='deconv', use_bn=use_bn)
        self.pred = nn.Sequential(ConvBlock(64, 16, kernel_size=3, stride=1, padding=1, mode='conv', use_bn=use_bn),
                                  torch.nn.Conv2d(16, 1, kernel_size=3, stride=1, padding=1))
 
        self.global_up_2 = ConvBlock(128, 64, kernel_size=4, stride=2, padding=1, mode='deconv', use_bn=use_bn)
-       self.global_up_1 = ConvBlock(128, 32, kernel_size=4, stride=2, padding=1, mode='deconv', use_bn=use_bn)              
+       self.global_up_1 = ConvBlock(128, 32, kernel_size=4, stride=2, padding=1, mode='deconv', use_bn=use_bn)
        self.global_pred = nn.Sequential(ConvBlock(64, 16, kernel_size=3, stride=1, padding=1, mode='conv', use_bn=use_bn),
                                        torch.nn.Conv2d(16, 1, kernel_size=3, stride=1, padding=1))
        self.depth_pred = nn.Sequential(ConvBlock(64, 16, kernel_size=3, stride=1, padding=1, mode='conv', use_bn=use_bn),
-                                       torch.nn.Conv2d(16, 1, kernel_size=3, stride=1, padding=1))       
-       
+                                       torch.nn.Conv2d(16, 1, kernel_size=3, stride=1, padding=1))
+
        if 'nonlocal' in options.suffix:
-           self.mask_non_local = BatchNonLocalBlock(64, 64)           
+           self.mask_non_local = BatchNonLocalBlock(64, 64)
            self.up_non_local_1 = BatchNonLocalBlock(64, 64)
            self.down_non_local_4 = BatchNonLocalBlock(256, 512)
            pass
@@ -73,10 +73,10 @@ class RefinementBlockMask(torch.nn.Module):
 
    def accumulate(self, x):
        return torch.cat([x, (x.sum(0, keepdim=True) - x) / max(len(x) - 1, 1)], dim=1)
-       
+
    def forward(self, image, masks, prev_parameters=None):
        x_mask = masks
-       
+
        x_0 = torch.cat([image, x_mask], dim=1)
 
        x_0 = self.conv_0(x_0)
@@ -84,14 +84,14 @@ class RefinementBlockMask(torch.nn.Module):
        x_1 = self.conv_1_1(self.accumulate(x_1))
        x_2 = self.conv_2(self.accumulate(x_1))
        x_2 = self.conv_2_1(self.accumulate(x_2))
-       
+
        if 'nonlocal' in self.options.suffix:
            x_4 = self.down_non_local_4(x_4)
            pass
        y_2 = self.up_2(x_2)
        y_1 = self.up_1(torch.cat([y_2, x_1], dim=1))
        y_0 = self.pred(torch.cat([y_1, x_0], dim=1))
-       
+
        global_y_2 = self.global_up_2(x_2.mean(dim=0, keepdim=True))
        global_y_1 = self.global_up_1(torch.cat([global_y_2, x_1.mean(dim=0, keepdim=True)], dim=1))
        global_mask = self.global_pred(torch.cat([global_y_1, x_0.mean(dim=0, keepdim=True)], dim=1))
@@ -105,7 +105,7 @@ class RefinementBlockMask(torch.nn.Module):
        else:
            parameters = prev_parameters
            pass
-       
+
        y_0 = torch.cat([global_mask[:, 0], y_0.squeeze(1)], dim=0)
        return y_0, depth, parameters
 
@@ -118,18 +118,18 @@ class RefinementBlockConcat(torch.nn.Module):
        use_bn = False
        max_num_planes = 30
        self.conv_0 = ConvBlock(3 + 2 + max_num_planes, 32, kernel_size=3, stride=1, padding=1, use_bn=use_bn)
-       self.conv_1 = ConvBlock(32, 64, kernel_size=3, stride=2, padding=1, use_bn=use_bn)       
+       self.conv_1 = ConvBlock(32, 64, kernel_size=3, stride=2, padding=1, use_bn=use_bn)
        self.conv_1_1 = ConvBlock(64, 64, kernel_size=3, stride=1, padding=1, use_bn=use_bn)
        self.conv_2 = ConvBlock(64, 128, kernel_size=3, stride=2, padding=1, use_bn=use_bn)
        self.conv_2_1 = ConvBlock(128, 128, kernel_size=3, stride=1, padding=1, use_bn=use_bn)
 
        self.up_2 = ConvBlock(128, 64, kernel_size=4, stride=2, padding=1, mode='deconv', use_bn=use_bn)
-       self.up_1 = ConvBlock(128, 32, kernel_size=4, stride=2, padding=1, mode='deconv', use_bn=use_bn)              
+       self.up_1 = ConvBlock(128, 32, kernel_size=4, stride=2, padding=1, mode='deconv', use_bn=use_bn)
        self.pred = nn.Sequential(ConvBlock(64, 32, kernel_size=3, stride=1, padding=1, mode='conv', use_bn=use_bn),
                                  torch.nn.Conv2d(32, max_num_planes, kernel_size=3, stride=1, padding=1))
 
        if 'nonlocal' in options.suffix:
-           self.mask_non_local = BatchNonLocalBlock(64, 64)           
+           self.mask_non_local = BatchNonLocalBlock(64, 64)
            self.up_non_local_1 = BatchNonLocalBlock(64, 64)
            self.down_non_local_4 = BatchNonLocalBlock(256, 512)
            pass
@@ -142,7 +142,7 @@ class RefinementBlockConcat(torch.nn.Module):
        return
 
    def forward(self, masks):
-       
+
        x_0 = masks
 
        x_0 = self.conv_0(x_0)
@@ -153,7 +153,7 @@ class RefinementBlockConcat(torch.nn.Module):
        y_2 = self.up_2(x_2)
        y_1 = self.up_1(torch.cat([y_2, x_1], dim=1))
        y_0 = self.pred(torch.cat([y_1, x_0], dim=1))
-       
+
        return y_0
 
 def convrelu2_block( num_inputs, num_outputs , kernel_size, stride, leaky_coef ):
@@ -280,7 +280,7 @@ def predict_motion_block( num_inputs , leaky_coef = 0.1, num_prev_parameters=0):
     if num_prev_parameters > 0:
         fc0 = nn.Sequential(linear_block(num_prev_parameters, 64, leaky_coef=leaky_coef),
                                  linear_block(64, 128, leaky_coef=leaky_coef),
-                                 linear_block(128, 256, leaky_coef=leaky_coef),                            
+                                 linear_block(128, 256, leaky_coef=leaky_coef),
         )
         fc1 = nn.Linear(128*8*6 + 256, 1024)
     else:
@@ -289,14 +289,14 @@ def predict_motion_block( num_inputs , leaky_coef = 0.1, num_prev_parameters=0):
         pass
     fc2 = nn.Linear(1024, 128)
     fc3 = nn.Linear(128, 7)
-    
+
     fc4 = nn.Linear(1024 + 256, 128)
     fc5 = nn.Linear(128, 3)
-    
+
     leaky_relu1 = nn.LeakyReLU(leaky_coef)
     leaky_relu2 = nn.LeakyReLU(leaky_coef)
     leaky_relu3 = nn.LeakyReLU(leaky_coef)
-    return conv1, nn.Sequential(fc1, leaky_relu1), nn.Sequential(fc2, leaky_relu2, fc3), fc0, nn.Sequential(fc4, leaky_relu3, fc5), 
+    return conv1, nn.Sequential(fc1, leaky_relu1), nn.Sequential(fc2, leaky_relu2, fc3), fc0, nn.Sequential(fc4, leaky_relu3, fc5),
 
 class FlowBlock(nn.Module):
 
@@ -305,7 +305,7 @@ class FlowBlock(nn.Module):
         super(FlowBlock, self).__init__()
 
         self.num_prev_channels = num_prev_channels
-        
+
         self.conv1 = convrelu2_block(6, (32, 32), (9, 9), 2, 0.1)
 
         if(self.num_prev_channels == 0):
@@ -372,9 +372,9 @@ class FlowBlock(nn.Module):
             extra = self.conv2_extra_inputs( prev_predictions )
             conv2 = torch.cat((conv2, extra), 1)
             pass
-        
+
         conv2_1 = self.conv2_1( conv2 )
-            
+
         conv3 = self.conv3( conv2_1 )
         conv3_1 = self.conv3_1( conv3 )
         conv4 = self.conv4( conv3_1 )
@@ -464,11 +464,11 @@ class RefinementNet(nn.Module):
             self.upsample = torch.nn.Upsample(size=(480, 640), mode='bilinear')
             self.plane_to_depth = PlaneToDepth(normalized_K=True, W=640, H=480)
         else:
-            self.upsample = torch.nn.Upsample(size=(192, 256), mode='bilinear')            
+            self.upsample = torch.nn.Upsample(size=(192, 256), mode='bilinear')
             self.plane_to_depth = PlaneToDepth(normalized_K=True, W=256, H=192)
             pass
         return
-    
+
     def forward(self, image_1, camera, prev_result):
         masks = prev_result['mask']
 
@@ -478,7 +478,7 @@ class RefinementNet(nn.Module):
         else:
             prev_predictions = torch.cat([torch.cat([prev_result['plane_depth'], prev_result['depth']], dim=1).repeat((len(masks), 1, 1, 1)), masks, (masks.sum(0, keepdim=True) - masks)[:, :1]], dim=1)
             pass
-        
+
         masks, depth, plane = self.refinement_block(image_1.repeat((len(masks), 1, 1, 1)), prev_predictions, prev_result['plane'])
         result = {}
 
@@ -486,7 +486,7 @@ class RefinementNet(nn.Module):
 
         plane_depths, plane_XYZ = self.plane_to_depth(camera[0], result['plane'], return_XYZ=True)
         all_depths = torch.cat([result['depth'].squeeze(1), plane_depths], dim=0)
-        
+
         all_masks = torch.softmax(masks, dim=0)
         plane_depth = (all_depths * all_masks).sum(0, keepdim=True)
 
@@ -494,7 +494,7 @@ class RefinementNet(nn.Module):
         result['plane_depth'] = plane_depth.unsqueeze(1)
         result['all_depths'] = all_depths
         result['all_masks'] = all_masks
-        
+
         all_masks_one_hot = (all_masks.max(0, keepdim=True)[1] == torch.arange(len(all_masks)).cuda().long().view(-1, 1, 1)).float()
         plane_depth_one_hot = (all_depths * all_masks_one_hot).sum(0, keepdim=True)
         result['plane_depth_one_hot'] = plane_depth_one_hot.unsqueeze(1)
@@ -506,11 +506,11 @@ class RefinementNetConcat(nn.Module):
         super(RefinementNetConcat, self).__init__()
         self.options = options
         self.refinement_block = RefinementBlockConcat(options)
-        
+
         self.upsample = torch.nn.Upsample(size=(192, 256), mode='bilinear')
-        self.plane_to_depth = PlaneToDepth(normalized_K=True, W=256, H=192)        
+        self.plane_to_depth = PlaneToDepth(normalized_K=True, W=256, H=192)
         return
-    
+
     def forward(self, image_1, camera, prev_result):
         masks = prev_result['mask']
         masks = masks[:, :1].view((1, -1, int(masks.shape[2]), int(masks.shape[3])))
@@ -524,7 +524,7 @@ class RefinementNetConcat(nn.Module):
         masks = self.refinement_block(prev_predictions)
         masks = masks[0, :num_planes]
         result = {}
-        
+
         result = {'plane': prev_result['plane'], 'depth': prev_result['depth']}
         plane_depths, plane_XYZ = self.plane_to_depth(camera[0], result['plane'], return_XYZ=True)
         all_depths = torch.cat([result['depth'].squeeze(1), plane_depths], dim=0)
@@ -532,16 +532,16 @@ class RefinementNetConcat(nn.Module):
         all_masks = torch.softmax(masks, dim=0)
         plane_depth = (all_depths * all_masks).sum(0, keepdim=True)
 
-            
+
         result['mask'] = masks.unsqueeze(1)
         result['plane_depth'] = plane_depth.unsqueeze(1)
         result['all_depths'] = all_depths
         result['all_masks'] = all_masks
-        
+
         all_masks_one_hot = (all_masks.max(0, keepdim=True)[1] == torch.arange(len(all_masks)).cuda().long().view(-1, 1, 1)).float()
         plane_depth_one_hot = (all_depths * all_masks_one_hot).sum(0, keepdim=True)
         result['plane_depth_one_hot'] = plane_depth_one_hot.unsqueeze(1)
-        return result    
+        return result
 
 
 def loadStateDict(flow_net, depth_net, state_dict):
@@ -552,14 +552,14 @@ def loadStateDict(flow_net, depth_net, state_dict):
         for dim in range(len(source.shape)):
             if source.shape[dim] < target.shape[dim]:
                 new_target = torch.cat([source, source.index_select(dim, torch.zeros(target.shape[dim] - source.shape[dim]).long())], dim=dim)
-                break                                
+                break
             elif source.shape[dim] > target.shape[dim]:
                 new_target = source.index_select(dim, torch.arange(target.shape[dim]).long())
                 break
         return new_target
-    
+
     new_flow_net_state = {}
-    new_depth_net_state = {}        
+    new_depth_net_state = {}
     for k, v in state_dict.items():
         if 'flow_block' in k:
             name = k.replace('flow_block.', '')
@@ -588,7 +588,7 @@ def loadStateDict(flow_net, depth_net, state_dict):
             pass
         else:
             print('not exist', k)
-            assert(False)                    
+            assert(False)
             pass
         continue
     flow_net_state.update(new_flow_net_state)
@@ -602,7 +602,7 @@ class RefineModel(nn.Module):
         super(RefineModel, self).__init__()
 
         self.options = options
-        
+
         K = [[0.89115971,  0,  0.5],
              [0,  1.18821287,  0.5],
              [0,           0,    1]]
@@ -626,7 +626,7 @@ class RefineModel(nn.Module):
             pass
         return
 
-    
+
     def forward(self, image_1, image_2, camera, masks, planes, plane_depth, depth_np, gt_dict={}):
         results = []
         result = {'plane': planes, 'mask': masks[:, 0], 'depth': depth_np.unsqueeze(1), 'plane_depth': depth_np.unsqueeze(1)}
@@ -640,7 +640,7 @@ class RefineModel(nn.Module):
             logits = torch.log(all_masks / (1 - all_masks))
             all_masks = self.crfrnn([logits, ((image_1[0] + 0.5) * 255).cpu()])
             masks = all_masks[1:].unsqueeze(1)
-            
+
             plane_depths, plane_XYZ = self.plane_to_depth(camera[0], result['plane'], return_XYZ=True)
 
             all_depths = torch.cat([result['depth'].squeeze(1), plane_depths], dim=0)
@@ -649,12 +649,12 @@ class RefineModel(nn.Module):
             all_masks_one_hot = (all_masks.max(0, keepdim=True)[1] == torch.arange(len(all_masks)).cuda().long().view(-1, 1, 1)).float()
             plane_depth_one_hot = (all_depths * all_masks_one_hot).sum(0, keepdim=True)
             result = {'mask': masks, 'plane': planes, 'depth': depth_np.unsqueeze(1), 'plane_depth': plane_depth.unsqueeze(1), 'plane_depth_one_hot': plane_depth_one_hot.unsqueeze(1)}
-            results.append(result)        
-            return results            
+            results.append(result)
+            return results
         else:
             result = {'mask': masks, 'plane': planes, 'depth': depth_np.unsqueeze(1), 'plane_depth': depth_np.unsqueeze(1)}
             pass
 
         result = self.refinement_net(image_1, camera, result)
-        results.append(result)        
+        results.append(result)
         return results

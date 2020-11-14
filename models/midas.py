@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from .blocks import FeatureFusionBlock, Interpolate, _make_encoder, _make_decoder
+from .midas_blocks import FeatureFusionBlock, Interpolate, _make_encoder, _make_decoder
 
 class Encoder(nn.Module):
     def __init__(self, state_dict):

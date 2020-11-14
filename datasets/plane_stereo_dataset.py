@@ -9,7 +9,7 @@ from torch.utils.data import Dataset
 
 import numpy as np
 import time
-import utils as utils
+import rcnn_utils as utils
 import os
 import cv2
 
@@ -48,10 +48,10 @@ class PlaneDataset(PlaneDatasetSingle):
             else:
                 index = (index + 1) % len(self.sceneImageIndices)
                 pass
-        
+
             sceneIndex, imageIndex = self.sceneImageIndices[index]
             scene = self.scenes[sceneIndex]
-            
+
             if imageIndex + self.options.frameGap < len(scene.imagePaths):
                 imageIndex_2 = imageIndex + self.options.frameGap
             else:
@@ -60,10 +60,10 @@ class PlaneDataset(PlaneDatasetSingle):
 
             if (sceneIndex * 10000 + imageIndex_2) in self.invalid_indices:
                 continue
-            
+
             try:
-                image_1, planes_1, plane_info_1, segmentation_1, depth_1, camera_1, extrinsics_1, semantics_1 = scene[imageIndex]                
-            except:                
+                image_1, planes_1, plane_info_1, segmentation_1, depth_1, camera_1, extrinsics_1, semantics_1 = scene[imageIndex]
+            except:
                 if self.write_invalid_indices:
                     print('invalid')
                     print(str(index) + ' ' + str(sceneIndex) + ' ' + str(imageIndex) + '\n', file=open(self.dataFolder + '/invalid_indices_' + self.split + '.txt', 'a'))
@@ -72,14 +72,14 @@ class PlaneDataset(PlaneDatasetSingle):
 
             if self.write_invalid_indices:
                 return 0
-            
+
             info_1 = [image_1, planes_1, plane_info_1, segmentation_1, depth_1, camera_1, extrinsics_1, semantics_1]
-            
+
             try:
                 image_2, planes_2, plane_info_2, segmentation_2, depth_2, camera_2, extrinsics_2, semantics_2 = scene[imageIndex_2]
             except:
                 continue
-            
+
             info_2 = [image_2, planes_2, plane_info_2, segmentation_2, depth_2, camera_2, extrinsics_2, semantics_2]
             break
         if self.image_only:
@@ -92,8 +92,8 @@ class PlaneDataset(PlaneDatasetSingle):
                     min_dim=self.config.IMAGE_MAX_DIM,
                     max_dim=self.config.IMAGE_MAX_DIM,
                     padding=self.config.IMAGE_PADDING)
-                
-                image = utils.mold_image(image.astype(np.float32), self.config)                
+
+                image = utils.mold_image(image.astype(np.float32), self.config)
                 image = torch.from_numpy(image.transpose(2, 0, 1)).float()
                 depth = np.concatenate([np.zeros((80, 640)), depth, np.zeros((80, 640))], axis=0)
                 data_pair += [image, depth.astype(np.float32), camera]
@@ -105,9 +105,9 @@ class PlaneDataset(PlaneDatasetSingle):
             image, planes, plane_info, segmentation, depth, camera, extrinsics, semantics = info
 
             image = cv2.resize(image, (depth.shape[1], depth.shape[0]))
-            
+
             instance_masks = []
-            class_ids = []        
+            class_ids = []
             parameters = []
 
             if len(planes) > 0:
@@ -118,11 +118,11 @@ class PlaneDataset(PlaneDatasetSingle):
                     plane_offsets = np.linalg.norm(planes, axis=-1)
                     plane_normals = planes / np.expand_dims(plane_offsets, axis=-1)
                     distances_N = np.linalg.norm(np.expand_dims(plane_normals, 1) - self.config.ANCHOR_NORMALS, axis=-1)
-                    normal_anchors = distances_N.argmin(-1)                
+                    normal_anchors = distances_N.argmin(-1)
                     distances_d = np.abs(np.expand_dims(plane_offsets, -1) - self.config.ANCHOR_OFFSETS)
                     offset_anchors = distances_d.argmin(-1)
                 elif 'normal' in self.config.ANCHOR_TYPE or self.config.ANCHOR_TYPE == 'patch':
-                    plane_offsets = np.linalg.norm(planes, axis=-1)                    
+                    plane_offsets = np.linalg.norm(planes, axis=-1)
                     plane_normals = planes / np.expand_dims(plane_offsets, axis=-1)
                     distances_N = np.linalg.norm(np.expand_dims(plane_normals, 1) - self.config.ANCHOR_NORMALS, axis=-1)
                     normal_anchors = distances_N.argmin(-1)
@@ -159,9 +159,9 @@ class PlaneDataset(PlaneDatasetSingle):
             mask = np.stack(instance_masks, axis=2)
             class_ids = np.array(class_ids, dtype=np.int32)
 
-                        
+
             image, image_metas, gt_class_ids, gt_boxes, gt_masks, gt_parameters = load_image_gt(self.config, index, image, depth, mask, class_ids, parameters, augment=self.split == 'train')
-            
+
             ## RPN Targets
             rpn_match, rpn_bbox = build_rpn_targets(image.shape, self.anchors,
                                                     gt_class_ids, gt_boxes, self.config)
@@ -173,9 +173,9 @@ class PlaneDataset(PlaneDatasetSingle):
                 gt_class_ids = gt_class_ids[ids]
                 gt_boxes = gt_boxes[ids]
                 gt_masks = gt_masks[:, :, ids]
-                gt_parameters = gt_parameters[ids]            
+                gt_parameters = gt_parameters[ids]
                 pass
-            
+
             ## Add to batch
             rpn_match = rpn_match[:, np.newaxis]
             image = utils.mold_image(image.astype(np.float32), self.config)
@@ -196,10 +196,10 @@ class PlaneDataset(PlaneDatasetSingle):
             data_pair += [image, image_metas, rpn_match, rpn_bbox, gt_class_ids, gt_boxes, gt_masks, gt_parameters, depth.astype(np.float32), extrinsics.astype(np.float32), planes.astype(np.float32), segmentation, plane_indices]
 
             if self.load_semantics or self.load_boundary:
-                semantics = np.concatenate([np.full((80, 640), fill_value=-1, dtype=np.int32), semantics, np.full((80, 640), fill_value=-1, dtype=np.int32)], axis=0)                
+                semantics = np.concatenate([np.full((80, 640), fill_value=-1, dtype=np.int32), semantics, np.full((80, 640), fill_value=-1, dtype=np.int32)], axis=0)
                 data_pair[-1] = semantics
                 pass
-            
+
             extrinsics_pair.append(extrinsics)
             continue
 
@@ -219,9 +219,8 @@ class PlaneDataset(PlaneDatasetSingle):
                 continue
             continue
         data_pair.append(info_1[1].astype(np.float32))
-        data_pair.append(info_2[1].astype(np.float32))        
+        data_pair.append(info_2[1].astype(np.float32))
         data_pair.append(correspondence)
         data_pair.append(camera.astype(np.float32))
 
         return data_pair
-
