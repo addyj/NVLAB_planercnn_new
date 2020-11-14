@@ -52,13 +52,13 @@ def create_modules(module_defs, img_size):
             elif mdef['activation'] == 'swish':
                 modules.add_module('activation', Swish())
 
-        elif mdef['type'] == 'BatchNorm2d':
-            filters = output_filters[-1]
-            modules = nn.BatchNorm2d(filters, momentum=0.03, eps=1E-4)
-            if i == 0 and filters == 3:  # normalize RGB image
-                # imagenet mean and var https://pytorch.org/docs/stable/torchvision/models.html#classification
-                modules.running_mean = torch.tensor([0.485, 0.456, 0.406])
-                modules.running_var = torch.tensor([0.0524, 0.0502, 0.0506])
+        # elif mdef['type'] == 'BatchNorm2d':
+        #     filters = output_filters[-1]
+        #     modules = nn.BatchNorm2d(filters, momentum=0.03, eps=1E-4)
+        #     if i == 0 and filters == 3:  # normalize RGB image
+        #         # imagenet mean and var https://pytorch.org/docs/stable/torchvision/models.html#classification
+        #         modules.running_mean = torch.tensor([0.485, 0.456, 0.406])
+        #         modules.running_var = torch.tensor([0.0524, 0.0502, 0.0506])
 
         elif mdef['type'] == 'maxpool':
             k = mdef['size']  # kernel size
@@ -79,18 +79,28 @@ def create_modules(module_defs, img_size):
 
         elif mdef['type'] == 'route':  # nn.Sequential() placeholder for 'route' layer
             layers = mdef['layers']
-            filters = sum([output_filters[l + 1 if l > 0 else l] for l in layers])
+            filters = 0
+            for l in layers:
+                if l <= 0:
+                    filters = filters + output_filters[l]
+                elif l == 61:
+                    filters = filters + 512
+                elif l == 36:
+                    filters = filters + 256
+                else:
+                    raise IndexError("Route in config with non existing layer")
+            # filters = sum([output_filters[l + 1 if l > 0 else l] for l in layers])
             routs.extend([i + l if l < 0 else l for l in layers])
             modules = FeatureConcat(layers=layers)
 
-        elif mdef['type'] == 'shortcut':  # nn.Sequential() placeholder for 'shortcut' layer
-            layers = mdef['from']
-            filters = output_filters[-1]
-            routs.extend([i + l if l < 0 else l for l in layers])
-            modules = WeightedFeatureFusion(layers=layers, weight='weights_type' in mdef)
+        # elif mdef['type'] == 'shortcut':  # nn.Sequential() placeholder for 'shortcut' layer
+        #     layers = mdef['from']
+        #     filters = output_filters[-1]
+        #     routs.extend([i + l if l < 0 else l for l in layers])
+        #     modules = WeightedFeatureFusion(layers=layers, weight='weights_type' in mdef)
 
-        elif mdef['type'] == 'reorg3d':  # yolov3-spp-pan-scale
-            pass
+        # elif mdef['type'] == 'reorg3d':  # yolov3-spp-pan-scale
+        #     pass
 
         elif mdef['type'] == 'yolo':
             yolo_index += 1

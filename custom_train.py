@@ -20,13 +20,13 @@ from datasets.plane_stereo_dataset import *
 from rcnn_utils import *
 from visualize_utils import *
 from evaluate_utils import *
-from rcnn_config import PlaneConfig
+from config import PlaneConfig
 
 from datasets.inference_dataset import InferenceDataset
 from plane_utils import *
 from options import parse_args
 
-from yolo_models import *
+from models.yolo_models import *
 from yolo_utils.datasets import *
 from yolo_utils.utils import *
 
