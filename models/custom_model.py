@@ -53,7 +53,13 @@ class POD_Model(nn.Module):
                                 self.encoder.pretrained.layer3,
                                 self.encoder.pretrained.layer4
                                 )
-        self.decoder3.load_state_dict(torch.load(options.checkpoint_dir + '/checkpoint.pth'), strict = False)
+                                
+        self.rcnn_state_dict = torch.load(options.checkpoint_dir + '/checkpoint.pth')
+        for key in list(self.rcnn_state_dict.keys()):
+            if key.startswith('fpn.C'):
+               del self.rcnn_state_dict[key]
+
+        self.decoder3.load_state_dict(self.rcnn_state_dict, strict = False)
         self.decoder3.set_trainable(r"(fpn.P5\_.*)|(fpn.P4\_.*)|(fpn.P3\_.*)|(fpn.P2\_.*)|(rpn.*)|(classifier.*)|(mask.*)")
 
     def forward(self, x):
@@ -61,10 +67,10 @@ class POD_Model(nn.Module):
         #384 torch.Size([2, 256, 96, 96]) torch.Size([2, 512, 48, 48]) torch.Size([2, 1024, 24, 24]) torch.Size([2, 2048, 12, 12])
         #(skip and concat n send to yolo)
         #416 torch.Size([2, 256, 104, 104]) torch.Size([2, 512, 52, 52]) torch.Size([2, 1024, 26, 26]) torch.Size([2, 2048, 13, 13])
+        final = self.decoder1(c1, c2, c3, c4)
         m_y_c3 = self.m_y_merge1(c3)
         m_y_c2 = self.m_y_merge2(c2)
         yolo_output = self.decoder2(c4, m_y_c2, m_y_c3)
-        final = self.decoder1(c1, c2, c3, c4)
         return final
 
     # def set_log_dir(self, model_path=None):
