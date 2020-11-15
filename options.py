@@ -38,9 +38,9 @@ def parse_args():
     parser.add_argument('--customDataFolder', dest='customDataFolder',
                         help='data folder',
                         default='test/custom', type=str)
-    parser.add_argument('--MaskRCNNPath', dest='MaskRCNNPath',
-                        help='path to Mask R-CNN weights',
-                        default='../mask_rcnn_coco.pth', type=str)
+    # parser.add_argument('--MaskRCNNPath', dest='MaskRCNNPath',
+    #                     help='path to Mask R-CNN weights',
+    #                     default='../mask_rcnn_coco.pth', type=str)
     parser.add_argument('--numTrainingImages', dest='numTrainingImages',
                         help='the number of images to train',
                         default=1000, type=int)
@@ -50,15 +50,15 @@ def parse_args():
     parser.add_argument('--testingIndex', dest='testingIndex',
                         help='the index of images to test',
                         default=-1, type=int)
-    parser.add_argument('--LR', dest='LR',
-                        help='learning rate',
-                        default=1e-5, type=float)
+    # parser.add_argument('--LR', dest='LR',
+    #                     help='learning rate',
+    #                     default=1e-5, type=float)
     parser.add_argument('--numEpochs', dest='numEpochs',
                         help='the number of epochs',
                         default=1000, type=int)
-    parser.add_argument('--startEpoch', dest='startEpoch',
-                        help='starting epoch index',
-                        default=-1, type=int)
+    # parser.add_argument('--startEpoch', dest='startEpoch',
+    #                     help='starting epoch index',
+    #                     default=-1, type=int)
     parser.add_argument('--modelType', dest='modelType',
                         help='model type',
                         default='', type=str)
@@ -94,9 +94,9 @@ def parse_args():
                         help='*.cfg path')
     parser.add_argument('--data', type=str, default='data/coco2017.data',
                         help='*.data path')
-    parser.add_argument('--multi-scale', action='store_true',
-                        help='adjust (67%% - 150%%) img_size every 10 batches')
-    parser.add_argument('--img-size', nargs='+', type=int, default=[512],
+    parser.add_argument('--multiScale', action='store_true',
+                        help='adjust (67%% - 150%%) imgSize every 10 batches')
+    parser.add_argument('--imgSize', nargs='+', type=int, default=[416],
                         help='[min_train, max-train, test] img sizes')
     parser.add_argument('--rect', action='store_true',
                         help='rectangular training')
@@ -106,9 +106,9 @@ def parse_args():
                         help='only save final checkpoint')
     parser.add_argument('--notest', action='store_true',
                         help='only test final epoch')
-    parser.add_argument('--weights', type=str,
-                        default='weights/yolov3-spp-ultralytics.pt',
-                        help='initial weights path')
+    # parser.add_argument('--weights', type=str,
+    #                     default='weights/yolov3-spp-ultralytics.pt',
+    #                     help='initial weights path')
 
     ## Flags
     parser.add_argument('--visualizeMode', dest='visualizeMode',

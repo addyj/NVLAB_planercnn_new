@@ -36,12 +36,12 @@ def train(options):
     #
     # config = PlaneConfig(options)
 
-    dataset = PlaneDataset(options, config, split='train', random=True)
-    dataset_test = PlaneDataset(options, config, split='test', random=False)
-
-    print('the number of images', len(dataset))
-
-    dataloader = DataLoader(dataset, batch_size=1, shuffle=True, num_workers=16)
+    # dataset = PlaneDataset(options, config, split='train', random=True)
+    # dataset_test = PlaneDataset(options, config, split='test', random=False)
+    #
+    # print('the number of images', len(dataset))
+    #
+    # dataloader = DataLoader(dataset, batch_size=1, shuffle=True, num_workers=16)
 
     # model = MaskRCNN(config)
     # refine_model = RefineModel(options)

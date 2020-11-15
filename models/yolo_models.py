@@ -234,7 +234,6 @@ class Decoder2(nn.Module):
         self.module_defs = parse_model_cfg(cfg)
         self.module_list, self.routs = create_modules(self.module_defs, img_size)
         self.yolo_layers = get_yolo_layers(self)
-        print(self.yolo_layers)
         # torch_utils.initialize_weights(self)
 
         # Darknet Header https://github.com/AlexeyAB/darknet/issues/2914#issuecomment-496675346

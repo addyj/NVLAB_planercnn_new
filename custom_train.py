@@ -61,15 +61,17 @@ def train(options):
         os.system("mkdir -p %s"%options.test_dir)
         pass
 
-    accumulate = options.accumulate  # effective bs = batch_size * accumulate = 16 * 4 = 64
-    opt_img_size = options.img_size.extend([options.img_size[-1]] * (3 - len(options.img_size)))
+    epochs = options.numEpochs
+    accumulate = options.accumulate  # effective bs = batch_size * accumulate = 13 * 4 = 52
+    opt_img_size = options.imgSize
+    opt_img_size.extend([options.imgSize[-1]] * (3 - len(options.imgSize)))
     imgsz_min, imgsz_max, imgsz_test = opt_img_size  # img sizes (min, max, test)
 
     # Image Sizes
     gs = 52  # (pixels) grid size
     assert math.fmod(imgsz_min, gs) == 0, '--img-size %g must be a %g-multiple' % (imgsz_min, gs)
-    opt.multi_scale |= imgsz_min != imgsz_max  # multi if different (min, max)
-    if opt.multi_scale:
+    options.multi_scale |= imgsz_min != imgsz_max  # multi if different (min, max)
+    if options.multi_scale:
         if imgsz_min == imgsz_max:
             imgsz_min //= 1.5
             imgsz_max //= 0.667
@@ -84,19 +86,18 @@ def train(options):
     for f in glob.glob('*_batch*.png') + glob.glob(results_file):
         os.remove(f)
 
-
-
-    # opt.weights = last if opt.resume else opt.weights
-    # wdir = 'weights' + os.sep  # yolo weights dir
-    # last = wdir + 'last.pt'
-    # best = wdir + 'best.pt'
-    #
-
     yolo_config = options.cfg
     rcnn_config = PlaneConfig(options)
 
 
     ######## Plane Dataset
+    # dataset = PlaneDataset(options, config, split='train', random=True)
+    # dataset_test = PlaneDataset(options, config, split='test', random=False)
+    #
+    # print('the number of images', len(dataset))
+    #
+    # dataloader = DataLoader(dataset, batch_size=1, shuffle=True, num_workers=16)
+
     # dict_keys(['XYZ', 'depth', 'mask', 'detection', 'masks', 'depth_np', 'plane_XYZ', 'depth_ori'])
 
     ### InferenceDataset for Plane doesnt work correctly
@@ -133,6 +134,9 @@ def train(options):
     # nc = 1 if opt.single_cls else int(data_dict['classes'])  # number of classes
     # hyp['cls'] *= nc / 80  # update coco-tuned hyp['cls'] to current dataset
 
+    ################# depth data
+    # train_loader, test_loader = getTrainingTestingData(batch_size=batch_size)
+
 
     model = POD_Model(yolo_config, rcnn_config, options)
     refine_model = RefineModel(options)
@@ -146,43 +150,74 @@ def train(options):
 
     refine_model.load_state_dict(torch.load(options.checkpoint_dir + '/checkpoint_refine.pth'))
 
+    start_epoch = 0
+    best_fitness = 0.0
 
-    # weights = options.weights  # initial training weights
+        # opt.weights = last if opt.resume else opt.weights
+        # wdir = 'weights' + os.sep  # yolo weights dir
+        # last = wdir + 'last.pt'
+        # best = wdir + 'best.pt'
+        #
+
+    # if weights.endswith('.pt'):  # pytorch format
+    #     # possible weights are '*.pt', 'yolov3-spp.pt', 'yolov3-tiny.pt' etc.
+    #     chkpt = torch.load(weights, map_location=device)
+    #
+    #     # load model
+    #     try:
+    #         chkpt['model'] = {k: v for k, v in chkpt['model'].items() if model.state_dict()[k].numel() == v.numel()}
+    #         model.load_state_dict(chkpt['model'], strict=False)
+    #     except KeyError as e:
+    #         s = "%s is not compatible with %s. Specify --weights '' or specify a --cfg compatible with %s. " \
+    #             "See https://github.com/ultralytics/yolov3/issues/657" % (opt.weights, opt.cfg, opt.weights)
+    #         raise KeyError(s) from e
+    #
+    #     # load optimizer
+    #     if chkpt['optimizer'] is not None:
+    #         optimizer.load_state_dict(chkpt['optimizer'])
+    #         best_fitness = chkpt['best_fitness']
+    #
+    #     # load results
+    #     if chkpt.get('training_results') is not None:
+    #         with open(results_file, 'w') as file:
+    #             file.write(chkpt['training_results'])  # write results.txt
+    #
+    #     start_epoch = chkpt['epoch'] + 1
+    #     del chkpt
+    #
+    # elif len(weights) > 0:  # darknet format
+    #     # possible weights are '*.weights', 'yolov3-tiny.conv.15',  'darknet53.conv.74' etc.
+    #     load_darknet_weights(model, weights)
+
 
     model_names = [name for name, param in model.named_parameters()]
     for name, param in refine_model.named_parameters():
         assert(name not in model_names)
         continue
 
-    trainables_wo_bn = [name for name, param in model.named_parameters() if param.requires_grad and not 'bn' in name]
-    print(trainables_wo_bn)
-    # trainables_only_bn = [param for name, param in model.named_parameters() if param.requires_grad and 'bn' in name]
-    #
-    # optimizer = optim.SGD([
-    #     {'params': trainables_wo_bn, 'weight_decay': 0.0001},
-    #     {'params': trainables_only_bn},
-    #     {'params': refine_model.parameters()}
-    # ], lr=options.LR, momentum=0.9)
-
     # Optimizer
     pg0, pg1, pg2 = [], [], []  # optimizer parameter groups
     for k, v in dict(model.named_parameters()).items():
-        if '.bias' in k:
-            pg2 += [k]  # biases
-        elif 'Conv2d.weight' in k:
-            pg1 += [k]  # apply weight_decay
-        else:
-            pg0 += [v]  # all else
+        if v.requires_grad:
+            if '.bias' in k:
+                pg2 += [v]  # biases
+            elif 'Conv2d.weight' in k or 'conv' in k or 'merge1.0' in k or 'merge2.0' in k:
+                pg1 += [v]  # apply weight_decay
+            else:
+                pg0 += [v]  # all else
 
-    print(">>>>>>   ", pg2)
-    print(">>>>>>   ", pg1)
-    # optimizer = optim.SGD(pg0, lr=hyp['lr0'], momentum=hyp['momentum'], nesterov=True)
-    # optimizer.add_param_group({'params': pg1, 'weight_decay': hyp['weight_decay']})  # add pg1 with weight_decay
-    # optimizer.add_param_group({'params': pg2})  # add pg2 (biases)
-    # optimizer.add_param_group({'params': refine_model.parameters()})
-    # del pg0, pg1, pg2
+    optimizer = optim.SGD(pg0, lr=hyp['lr0'], momentum=hyp['momentum'], nesterov=True)
+    optimizer.add_param_group({'params': pg1, 'weight_decay': hyp['weight_decay']})  # add pg1 with weight_decay
+    optimizer.add_param_group({'params': pg2})  # add pg2 (biases)
+    optimizer.add_param_group({'params': refine_model.parameters()})
+    del pg0, pg1, pg2
 
+    lf = lambda x: (((1 + math.cos(
+        x * math.pi / epochs)) / 2) ** 1.0) * 0.95 + 0.05  # cosine
+    scheduler = lr_scheduler.LambdaLR(optimizer, lr_lambda=lf, last_epoch=start_epoch - 1)
 
+    # Loss
+    l1_criterion = nn.L1Loss()
 
 if __name__ == '__main__':
     args = parse_args()
@@ -202,10 +237,6 @@ if __name__ == '__main__':
 
     args.checkpoint_dir = 'checkpoint/' + args.keyname
     args.test_dir = 'test/' + args.keyname
-
-    if False:
-        writeHTML(args.test_dir, ['image_0', 'segmentation_0', 'depth_0', 'depth_0_detection', 'depth_0_detection_ori'], labels=['input', 'segmentation', 'gt', 'before', 'after'], numImages=20, image_width=160, convertToImage=True)
-        exit(1)
 
     os.system('rm ' + args.test_dir + '/*.png')
 
