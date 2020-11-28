@@ -29,15 +29,15 @@ def parse_args():
     parser.add_argument('--testingDataset', dest='testingDataset',
                         help='dataset name for test/predict',
                         default='', type=str)
-    parser.add_argument('--dataFolder', dest='dataFolder',
-                        help='data folder',
-                        default='../../Data/ScanNet/', type=str)
+    # parser.add_argument('--dataFolder', dest='dataFolder',
+    #                     help='data folder',
+    #                     default='../../Data/ScanNet/', type=str)
     parser.add_argument('--anchorFolder', dest='anchorFolder',
                         help='anchor folder',
                         default='anchors/', type=str)
-    parser.add_argument('--customDataFolder', dest='customDataFolder',
-                        help='data folder',
-                        default='test/custom', type=str)
+    # parser.add_argument('--customDataFolder', dest='customDataFolder',
+    #                     help='data folder',
+    #                     default='test/custom', type=str)
     # parser.add_argument('--MaskRCNNPath', dest='MaskRCNNPath',
     #                     help='path to Mask R-CNN weights',
     #                     default='../mask_rcnn_coco.pth', type=str)

@@ -67,16 +67,16 @@ def train(options):
     imgsz_min, imgsz_max, imgsz_test = opt_img_size  # img sizes (min, max, test)
 
     # Image Sizes
-    gs = 52  # (pixels) grid size
-    assert math.fmod(imgsz_min, gs) == 0, '--img-size %g must be a %g-multiple' % (imgsz_min, gs)
-    options.multiScale |= imgsz_min != imgsz_max  # multi if different (min, max)
-    if options.multiScale:
-        if imgsz_min == imgsz_max:
-            imgsz_min //= 1.5
-            imgsz_max //= 0.667
-        grid_min, grid_max = imgsz_min // gs, imgsz_max // gs
-        imgsz_min, imgsz_max = grid_min * gs, grid_max * gs
-    img_size = imgsz_max  # initialize with max size
+    # gs = 52  # (pixels) grid size
+    # assert math.fmod(imgsz_min, gs) == 0, '--img-size %g must be a %g-multiple' % (imgsz_min, gs)
+    # options.multiScale |= imgsz_min != imgsz_max  # multi if different (min, max)
+    # if options.multiScale:
+    #     if imgsz_min == imgsz_max:
+    #         imgsz_min //= 1.5
+    #         imgsz_max //= 0.667
+    #     grid_min, grid_max = imgsz_min // gs, imgsz_max // gs
+    #     imgsz_min, imgsz_max = grid_min * gs, grid_max * gs
+    # img_size = imgsz_max  # initialize with max size
 
     init_seeds(seed=30)
 
@@ -176,7 +176,7 @@ def train(options):
         if v.requires_grad:
             if '.bias' in k:
                 pg2 += [v]  # biases
-            elif 'Conv2d.weight' in k or 'conv' in k or 'merge1.0' in k or 'merge2.0' in k:
+            elif 'Conv2d.weight' in k or 'conv' in k or 'merge1.0' in k or 'merge2.0' in k or 'merge3.0' in k:
                 pg1 += [v]  # apply weight_decay
             else:
                 pg0 += [v]  # all else

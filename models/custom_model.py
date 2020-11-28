@@ -44,6 +44,15 @@ class POD_Model(nn.Module):
                                     nn.BatchNorm2d(256, momentum=0.03, eps=1E-4),
                                     nn.LeakyReLU(0.1, inplace=True)
                                 )
+        self.m_y_merge3 = nn.Sequential(nn.Conv2d(in_channels=2048,
+                                            out_channels=1024,
+                                            kernel_size=1,
+                                            stride=1,
+                                            padding=0,
+                                            bias=False),
+                                    nn.BatchNorm2d(1024, momentum=0.03, eps=1E-4),
+                                    nn.LeakyReLU(0.1, inplace=True)
+                                )
 
         self.decoder2 = Decoder2(self.yolo_config)
 
@@ -65,7 +74,8 @@ class POD_Model(nn.Module):
         midas_output = self.decoder1(c1, c2, c3, c4)
         m_y_c3 = self.m_y_merge1(c3)
         m_y_c2 = self.m_y_merge2(c2)
-        yolo_output = self.decoder2(c4, m_y_c2, m_y_c3)
+        m_y_c4 = self.m_y_merge3(c4)
+        yolo_output = self.decoder2(m_y_c4, m_y_c2, m_y_c3)
 
 
         return midas_output, yolo_output
