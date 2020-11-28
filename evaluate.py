@@ -587,8 +587,10 @@ def evaluate(options):
                     continue
             else:
                 for c in range(len(detection_pair)):
-                    #np.save(options.test_dir + '/' + str(sampleIndex % 500) + '_plane_parameters_' + str(c) + '.npy', detection_pair[c]['detection'][:, 6:9])
-                    #np.save(options.test_dir + '/' + str(sampleIndex % 500) + '_plane_masks_' + str(c) + '.npy', detection_pair[c]['masks'][:, 80:560])
+                    name_file = image_list[sampleIndex]
+                    pred_suff = os.path.splitext(os.path.basename(name_file))[0]
+                    np.save(options.test_dir + '/' + str(pred_suff) + '.npy', detection_pair[c]['detection'][:, 6:9].cpu())
+                    np.savez_compressed(options.test_dir + '/' + str(pred_suff) + '.npz', detection_pair[c]['masks'][:, 80:560].cpu())
                     continue
                 pass
 

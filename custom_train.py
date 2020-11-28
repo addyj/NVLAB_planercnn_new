@@ -13,16 +13,14 @@ import glob
 
 from models.rcnn import *
 from models.custom_model import *
-from models.refinement_net import *
+# from models.refinement_net import *
 from models.modules import *
-from datasets.plane_stereo_dataset import *
 
 from rcnn_utils import *
 from visualize_utils import *
 from evaluate_utils import *
 from config import PlaneConfig
 
-from datasets.inference_dataset import InferenceDataset
 from plane_utils import *
 from options import parse_args
 
@@ -61,6 +59,7 @@ def train(options):
         os.system("mkdir -p %s"%options.test_dir)
         pass
 
+    batch_size = options.batchSize
     epochs = options.numEpochs
     accumulate = options.accumulate  # effective bs = batch_size * accumulate = 13 * 4 = 52
     opt_img_size = options.imgSize
@@ -70,8 +69,8 @@ def train(options):
     # Image Sizes
     gs = 52  # (pixels) grid size
     assert math.fmod(imgsz_min, gs) == 0, '--img-size %g must be a %g-multiple' % (imgsz_min, gs)
-    options.multi_scale |= imgsz_min != imgsz_max  # multi if different (min, max)
-    if options.multi_scale:
+    options.multiScale |= imgsz_min != imgsz_max  # multi if different (min, max)
+    if options.multiScale:
         if imgsz_min == imgsz_max:
             imgsz_min //= 1.5
             imgsz_max //= 0.667
@@ -89,111 +88,87 @@ def train(options):
     yolo_config = options.cfg
     rcnn_config = PlaneConfig(options)
 
+    data = options.data
+    data_dict = parse_data_cfg(data)
+    train_path = data_dict['train']
+    test_path = data_dict['valid']
+    nc = int(data_dict['classes'])  # number of classes
+    hyp['cls'] *= nc / 80  # update coco-tuned hyp['cls'] to current dataset
 
-    ######## Plane Dataset
-    # dataset = PlaneDataset(options, config, split='train', random=True)
-    # dataset_test = PlaneDataset(options, config, split='test', random=False)
+    # Dataset
+    dataset = LoadImagesAndLabels(options, rcnn_config, train_path, img_size, batch_size,
+                                  augment=False,
+                                  hyp=hyp,  # augmentation hyperparameters
+                                  rect=options.rect  # rectangular training
+                                  )
+
+    # # Dataloader
+    nw = 4 # number of workers
+    dataloader = DataLoader(dataset,
+                            batch_size=batch_size,
+                            num_workers=nw,
+                            shuffle=not options.rect,  # Shuffle=True unless rectangular training is used
+                            pin_memory=True,
+                            collate_fn=dataset.collate_fn)
+
+    # # Testloader
+    # testloader = torch.utils.data.DataLoader(LoadImagesAndLabels(test_path, imgsz_test, batch_size,
+    #                                                              hyp=hyp,
+    #                                                              rect=True,
+    #                                                              cache_images=opt.cache_images,
+    #                                                              single_cls=opt.single_cls),
+    #                                          batch_size=batch_size,
+    #                                          num_workers=nw,
+    #                                          pin_memory=True,
+    #                                          collate_fn=dataset.collate_fn)
     #
-    # print('the number of images', len(dataset))
-    #
-    # dataloader = DataLoader(dataset, batch_size=1, shuffle=True, num_workers=16)
-
-    # dict_keys(['XYZ', 'depth', 'mask', 'detection', 'masks', 'depth_np', 'plane_XYZ', 'depth_ori'])
-
-    ### InferenceDataset for Plane doesnt work correctly
-    # rcnn_config.FITTING_TYPE = options.numAnchorPlanes
-    #
-    # if 'custom' in options.dataset:
-    #     image_list = glob.glob(options.customDataFolder + '/*.png') + glob.glob(options.customDataFolder + '/*.jpg')
-    #     if os.path.exists(options.customDataFolder + '/camera.txt'):
-    #         camera = np.zeros(6)
-    #         with open(options.customDataFolder + '/camera.txt', 'r') as f:
-    #             for line in f:
-    #                 values = [float(token.strip()) for token in line.split(' ') if token.strip() != '']
-    #                 for c in range(6):
-    #                     camera[c] = values[c]
-    #                     continue
-    #                 break
-    #             pass
-    #     else:
-    #         camera = [filename.replace('.png', '.txt').replace('.jpg', '.txt') for filename in image_list]
-    #         pass
-    #     dataset = InferenceDataset(options, rcnn_config, image_list=image_list, camera=camera, random=True)
-    #     pass
-    #
-    # print('the number of images', len(dataset))
-    #
-    # dataloader = DataLoader(dataset, batch_size=1, shuffle=True, num_workers=16)
-
-    ################ yolo data
-
-    # data = opt.data
-    # data_dict = parse_data_cfg(data)
-    # train_path = data_dict['train']
-    # test_path = data_dict['valid']
-    # nc = 1 if opt.single_cls else int(data_dict['classes'])  # number of classes
-    # hyp['cls'] *= nc / 80  # update coco-tuned hyp['cls'] to current dataset
-
-    ################# depth data
-    # train_loader, test_loader = getTrainingTestingData(batch_size=batch_size)
-
 
     model = POD_Model(yolo_config, rcnn_config, options)
-    refine_model = RefineModel(options)
+    # refine_model = RefineModel(options)
 
     model.cuda()
     model.train()
-    refine_model.cuda()
-    refine_model.train()
+    # refine_model.cuda()
+    # refine_model.train()
 
     # print(summary(model, input_size=(3, 416, 416)))
 
-    refine_model.load_state_dict(torch.load(options.checkpoint_dir + '/checkpoint_refine.pth'))
+    # refine_model.load_state_dict(torch.load(options.checkpoint_dir + '/checkpoint_refine.pth'))
 
     start_epoch = 0
     best_fitness = 0.0
 
-        # opt.weights = last if opt.resume else opt.weights
-        # wdir = 'weights' + os.sep  # yolo weights dir
-        # last = wdir + 'last.pt'
-        # best = wdir + 'best.pt'
-        #
+    # opt.weights = last if opt.resume else opt.weights
+    # wdir = 'weights' + os.sep  # yolo weights dir
+    # last = wdir + 'last.pt'
+    # best = wdir + 'best.pt'
 
-    # if weights.endswith('.pt'):  # pytorch format
-    #     # possible weights are '*.pt', 'yolov3-spp.pt', 'yolov3-tiny.pt' etc.
-    #     chkpt = torch.load(weights, map_location=device)
-    #
-    #     # load model
-    #     try:
-    #         chkpt['model'] = {k: v for k, v in chkpt['model'].items() if model.state_dict()[k].numel() == v.numel()}
-    #         model.load_state_dict(chkpt['model'], strict=False)
-    #     except KeyError as e:
-    #         s = "%s is not compatible with %s. Specify --weights '' or specify a --cfg compatible with %s. " \
-    #             "See https://github.com/ultralytics/yolov3/issues/657" % (opt.weights, opt.cfg, opt.weights)
-    #         raise KeyError(s) from e
-    #
-    #     # load optimizer
-    #     if chkpt['optimizer'] is not None:
-    #         optimizer.load_state_dict(chkpt['optimizer'])
-    #         best_fitness = chkpt['best_fitness']
-    #
-    #     # load results
-    #     if chkpt.get('training_results') is not None:
-    #         with open(results_file, 'w') as file:
-    #             file.write(chkpt['training_results'])  # write results.txt
-    #
-    #     start_epoch = chkpt['epoch'] + 1
-    #     del chkpt
-    #
-    # elif len(weights) > 0:  # darknet format
-    #     # possible weights are '*.weights', 'yolov3-tiny.conv.15',  'darknet53.conv.74' etc.
-    #     load_darknet_weights(model, weights)
+    chkpt = torch.load('weights/last2.pt')
+    yolo_extract = dict()
+    for k, v in chkpt['model'].items():
+      module_key = k.split('.')
+      if int(module_key[1]) > 74:
+        module_key[1] = str(int(module_key[1]) - 75)
+        yolo_extract['.'.join(module_key)] = v
 
+    model.decoder2.load_state_dict(yolo_extract, strict=False)
 
-    model_names = [name for name, param in model.named_parameters()]
-    for name, param in refine_model.named_parameters():
-        assert(name not in model_names)
-        continue
+    if chkpt['optimizer'] is not None:
+        optimizer.load_state_dict(chkpt['optimizer'])
+        best_fitness = chkpt['best_fitness']
+
+    # # load results
+    # if chkpt.get('training_results') is not None:
+    #     with open(results_file, 'w') as file:
+    #         file.write(chkpt['training_results'])  # write results.txt
+
+    del chkpt
+    del yolo_extract
+
+    # model_names = [name for name, param in model.named_parameters()]
+    # for name, param in refine_model.named_parameters():
+    #     assert(name not in model_names)
+    #     continue
 
     # Optimizer
     pg0, pg1, pg2 = [], [], []  # optimizer parameter groups
@@ -209,7 +184,7 @@ def train(options):
     optimizer = optim.SGD(pg0, lr=hyp['lr0'], momentum=hyp['momentum'], nesterov=True)
     optimizer.add_param_group({'params': pg1, 'weight_decay': hyp['weight_decay']})  # add pg1 with weight_decay
     optimizer.add_param_group({'params': pg2})  # add pg2 (biases)
-    optimizer.add_param_group({'params': refine_model.parameters()})
+    # optimizer.add_param_group({'params': refine_model.parameters()})
     del pg0, pg1, pg2
 
     lf = lambda x: (((1 + math.cos(
@@ -218,6 +193,30 @@ def train(options):
 
     # Loss
     l1_criterion = nn.L1Loss()
+
+    # Model parameters for YOLO
+    model.nc = nc  # attach number of classes to model
+    model.hyp = hyp  # attach hyperparameters to model
+    model.gr = 1.0  # giou loss ratio (obj_loss = 1.0 or giou)
+    model.class_weights = labels_to_class_weights(dataset.labels, nc).to(device)  # attach class weights
+
+    # Model EMA
+    ema = torch_utils.ModelEMA(model)
+
+    # Start training
+    nb = len(dataloader)  # number of batches
+    print("Numbers of Batches: ", nb)
+    n_burn = max(3 * nb, 500)  # burn-in iterations, max(3 epochs, 500 iterations)
+    maps = np.zeros(nc)  # mAP per class
+    # torch.autograd.set_detect_anomaly(True)
+    results = (0, 0, 0, 0, 0, 0, 0)  # 'P', 'R', 'mAP', 'F1', 'val GIoU', 'val Objectness', 'val Classification'
+    t0 = time.time()
+    print('Image sizes %g - %g train, %g test' % (imgsz_min, imgsz_max, imgsz_test))
+    print('Using %g dataloader workers' % nw)
+    print('Starting training for %g epochs...' % epochs)
+
+    # for epoch in range(start_epoch, epochs):
+
 
 if __name__ == '__main__':
     args = parse_args()

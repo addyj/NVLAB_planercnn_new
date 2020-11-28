@@ -45,15 +45,10 @@ class POD_Model(nn.Module):
                                     nn.LeakyReLU(0.1, inplace=True)
                                 )
 
-        self.decoder2 = Decoder2(yolo_config)
+        self.decoder2 = Decoder2(self.yolo_config)
 
-        self.decoder3 = Decoder3(self.rcnn_config,
-                                self.encoder.pretrained.layer1,
-                                self.encoder.pretrained.layer2,
-                                self.encoder.pretrained.layer3,
-                                self.encoder.pretrained.layer4
-                                )
-                                
+        self.decoder3 = Decoder3(self.rcnn_config)
+
         self.rcnn_state_dict = torch.load(options.checkpoint_dir + '/checkpoint.pth')
         for key in list(self.rcnn_state_dict.keys()):
             if key.startswith('fpn.C'):
@@ -67,11 +62,13 @@ class POD_Model(nn.Module):
         #384 torch.Size([2, 256, 96, 96]) torch.Size([2, 512, 48, 48]) torch.Size([2, 1024, 24, 24]) torch.Size([2, 2048, 12, 12])
         #(skip and concat n send to yolo)
         #416 torch.Size([2, 256, 104, 104]) torch.Size([2, 512, 52, 52]) torch.Size([2, 1024, 26, 26]) torch.Size([2, 2048, 13, 13])
-        final = self.decoder1(c1, c2, c3, c4)
+        midas_output = self.decoder1(c1, c2, c3, c4)
         m_y_c3 = self.m_y_merge1(c3)
         m_y_c2 = self.m_y_merge2(c2)
         yolo_output = self.decoder2(c4, m_y_c2, m_y_c3)
-        return final
+
+
+        return midas_output, yolo_output
 
     # def set_log_dir(self, model_path=None):
     #     """Sets the model log directory and epoch counter.

@@ -86,15 +86,15 @@ class SamePad2d(nn.Module):
 ############################################################
 
 class FPN(nn.Module):
-    def __init__(self, C1, C2, C3, C4, C5, out_channels, bilinear_upsampling=False):
+    def __init__(self, out_channels, bilinear_upsampling=False):
         super(FPN, self).__init__()
         self.out_channels = out_channels
         self.bilinear_upsampling = bilinear_upsampling
-        self.C1 = C1
-        self.C2 = C2
-        self.C3 = C3
-        self.C4 = C4
-        self.C5 = C5
+        # self.C1 = C1
+        # self.C2 = C2
+        # self.C3 = C3
+        # self.C4 = C4
+        # self.C5 = C5
         self.P6 = nn.MaxPool2d(kernel_size=1, stride=2)
         self.P5_conv1 = nn.Conv2d(2048, self.out_channels, kernel_size=1, stride=1)
         self.P5_conv2 = nn.Sequential(
@@ -117,16 +117,16 @@ class FPN(nn.Module):
             nn.Conv2d(self.out_channels, self.out_channels, kernel_size=3, stride=1),
         )
 
-    def forward(self, x):
-        x = self.C1(x)
-        x = self.C2(x)
-        c2_out = x
-        x = self.C3(x)
-        c3_out = x
-        x = self.C4(x)
-        c4_out = x
-        x = self.C5(x)
-        p5_out = self.P5_conv1(x)
+    def forward(self, midas_extract):
+        # x = self.C1(x)
+        # x = self.C2(x)
+        c2_out = midas_extract[0]
+        # x = self.C3(x)
+        c3_out = midas_extract[1]
+        # x = self.C4(x)
+        c4_out = midas_extract[2]
+        # x = self.C5(x)
+        p5_out = self.P5_conv1(midas_extract[4])
 
         if self.bilinear_upsampling:
             p4_out = self.P4_conv1(c4_out) + F.upsample(p5_out, scale_factor=2, mode='bilinear')
@@ -1391,16 +1391,16 @@ class Decoder3(nn.Module):
     """Encapsulates the Mask RCNN model functionality.
     """
     # def __init__(self, config, model_dir='test'):
-    def __init__(self, config, C1, C2, C3, C4):
+    def __init__(self, config):
         """
         config: A Sub-class of the Config class
         """
         super(Decoder3, self).__init__()
         self.config = config
-        self.build(config, C1, C2, C3, C4)
+        self.build(config)
         # self.initialize_weights()
 
-    def build(self, config, C1, C2, C3, C4):
+    def build(self, config):
         """Build Mask R-CNN architecture.
         """
 
@@ -1420,8 +1420,7 @@ class Decoder3(nn.Module):
 
         ## Top-down Layers
         ## TODO: add assert to varify feature map sizes match what's in config
-        C5 = None
-        self.fpn = FPN(C1, C2, C3, C4, C5, out_channels=256, bilinear_upsampling=self.config.BILINEAR_UPSAMPLING)
+        self.fpn = FPN(out_channels=256, bilinear_upsampling=self.config.BILINEAR_UPSAMPLING)
 
         ## Generate Anchors
         self.anchors = Variable(torch.from_numpy(utils.generate_pyramid_anchors(config.RPN_ANCHOR_SCALES,
@@ -1600,6 +1599,9 @@ class Decoder3(nn.Module):
                 "parameters": final_parameters,
             })
         return results
+
+    # def predict_batch(self, input):
+
 
     def predict(self, input, mode, use_nms=1, use_refinement=False, return_feature_map=False):
         molded_images = input[0]

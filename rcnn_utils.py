@@ -818,7 +818,8 @@ def predictPlaneNet(image):
 
 
 ## Clean segmentation
-def cleanSegmentation(image, planes, plane_info, segmentation, depth, camera, planeAreaThreshold=200, planeWidthThreshold=10, depthDiffThreshold=0.1, validAreaThreshold=0.5, brightThreshold=20, confident_labels={}, return_plane_depths=False):
+# def cleanSegmentation(image, planes, plane_info, segmentation, depth, camera, planeAreaThreshold=200, planeWidthThreshold=10, depthDiffThreshold=0.1, validAreaThreshold=0.5, brightThreshold=20, confident_labels={}, return_plane_depths=False):
+def cleanSegmentation(image, planes, segmentation, depth, camera, planeAreaThreshold=200, planeWidthThreshold=10, depthDiffThreshold=0.1, validAreaThreshold=0.5, brightThreshold=20, confident_labels={}, return_plane_depths=False):
 
     planeDepths = calcPlaneDepths(planes, segmentation.shape[1], segmentation.shape[0], camera).transpose((2, 0, 1))
 
@@ -831,15 +832,15 @@ def cleanSegmentation(image, planes, plane_info, segmentation, depth, camera, pl
             continue
         segmentMask = segmentation == segmentIndex
 
-        try:
-            plane_info[segmentIndex][0][1]
-        except:
-            print('invalid plane info')
-            print(plane_info)
-            print(len(plane_info), len(planes), segmentation.min(), segmentation.max())
-            print(segmentIndex)
-            print(plane_info[segmentIndex])
-            exit(1)
+        # try:
+        #     plane_info[segmentIndex][0][1]
+        # except:
+        #     print('invalid plane info')
+        #     print(plane_info)
+        #     print(len(plane_info), len(planes), segmentation.min(), segmentation.max())
+        #     print(segmentIndex)
+        #     print(plane_info[segmentIndex])
+        #     exit(1)
         if plane_info[segmentIndex][0][1] in confident_labels:
             if segmentMask.sum() > planeAreaThreshold:
                 newSegmentation[segmentMask] = segmentIndex
@@ -873,405 +874,405 @@ def cleanSegmentation(image, planes, plane_info, segmentation, depth, camera, pl
 
 
 
-def getLayout(planes, depth, plane_depths, plane_info, segmentation, camera, layout_labels={}, return_segmentation=True, get_boundary=True):
-    parallelThreshold = np.cos(np.deg2rad(30))
-
-    layoutSegmentation = np.full(segmentation.shape, fill_value=-1)
-
-    layoutPlanePoints = []
-    layoutPlaneMasks = []
-    layoutPlaneIndices = []
-    for planeIndex, info in enumerate(plane_info):
-        if info[0][1] not in layout_labels:
-            continue
-        mask = segmentation == planeIndex
-        ys, xs = mask.nonzero()
-        if len(xs) < depth.shape[0] * depth.shape[1] * 0.02:
-            continue
-        layoutSegmentation[mask] = len(layoutPlaneIndices)
-        layoutPlanePoints.append(np.stack([xs, ys], axis=-1))
-        layoutPlaneMasks.append(mask)
-        layoutPlaneIndices.append(planeIndex)
-        continue
-
-    if len(layoutPlaneIndices) == 0:
-        if get_boundary:
-            if return_segmentation:
-                return layoutSegmentation, {}
-            else:
-                return {}, {}
-        else:
-            if return_segmentation:
-                return layoutSegmentation
-            else:
-                return {}
-            pass
-        pass
-
-    layoutPlaneInfo = zip(layoutPlanePoints, layoutPlaneMasks, layoutPlaneIndices)
-    layoutPlaneInfo = sorted(layoutPlaneInfo, key=lambda x:-len(x[0]))
-    layoutPlanePoints, layoutPlaneMasks, layoutPlaneIndices = zip(*layoutPlaneInfo)
-
-
-    layout_areas = [len(points) for points in layoutPlanePoints]
-    layoutPlaneIndices = np.array(layoutPlaneIndices)
-    layout_plane_depths = plane_depths[layoutPlaneIndices]
-    layout_planes = planes[layoutPlaneIndices]
-
-    relations = np.zeros((len(layoutPlanePoints), len(layoutPlanePoints)), dtype=np.int32)
-    for index_1, points_1 in enumerate(layoutPlanePoints):
-        plane_1 = layout_planes[index_1]
-        offset_1 = np.linalg.norm(plane_1)
-        normal_1 = plane_1 / max(offset_1, 1e-4)
-        uv_1 = np.round(points_1.mean(0)).astype(np.int32)
-        depth_value_1 = layout_plane_depths[index_1, uv_1[1], uv_1[0]]
-        point_1 = np.array([(uv_1[0] - camera[2]) / camera[0], 1, -(uv_1[1] - camera[3]) / camera[1]]) * depth_value_1
-        for index_2, points_2 in enumerate(layoutPlanePoints):
-            if index_2 <= index_1:
-                continue
-            plane_2 = layout_planes[index_2]
-            offset_2 = np.linalg.norm(plane_2)
-            normal_2 = plane_2 / max(offset_2, 1e-4)
-            if np.abs(np.dot(normal_2, normal_1)) > parallelThreshold:
-                continue
-            uv_2 = np.round(points_2.mean(0)).astype(np.int32)
-            depth_value_2 = layout_plane_depths[index_2, uv_2[1], uv_2[0]]
-            point_2 = np.array([(uv_2[0] - camera[2]) / camera[0], 1, -(uv_2[1] - camera[3]) / camera[1]]) * depth_value_2
-
-            if np.dot(normal_1, point_2 - point_1) <= 0 and np.dot(normal_2, point_1 - point_2) < 0:
-                relations[index_1][index_2] = 1
-                relations[index_2][index_1] = 1
-            else:
-                relations[index_1][index_2] = 2
-                relations[index_2][index_1] = 2
-                pass
-            continue
-        continue
-
-
-    combinations = []
-    indices = range(len(layoutPlaneIndices))
-    for num_planes in range(2, len(layoutPlaneIndices) + 1):
-        for plane_indices in itertools.combinations(indices, num_planes):
-            combinations.append((plane_indices, sum([layout_areas[plane_index] for plane_index in plane_indices])))
-            continue
-        continue
-    combinations = sorted(combinations, key=lambda x:-x[1])
-    combinations = [combination for combination in combinations if combination[1] > layout_areas[0]]
-
-    valid_mask = depth > 1e-4
-    valid_area = valid_mask.sum()
-    layout_found = False
-    layout_plane_depths[layout_plane_depths < 1e-4] = 10
-    plane_mask_dict = {}
-    for combination, area in combinations:
-        combination = np.array(combination)
-        depths = layout_plane_depths[combination]
-        combination_depth = np.zeros(segmentation.shape)
-        for plane_index_1 in combination:
-            plane_mask = np.ones(segmentation.shape, dtype=np.bool)
-            for plane_index_2 in combination:
-                if plane_index_2 == plane_index_1:
-                    continue
-                if (plane_index_1, plane_index_2) not in plane_mask_dict:
-                    if relations[plane_index_1][plane_index_2] == 0:
-                        plane_mask_dict[(plane_index_1, plane_index_2)] = 1 - layoutPlaneMasks[plane_index_2]
-                        plane_mask_dict[(plane_index_2, plane_index_1)] = 1 - layoutPlaneMasks[plane_index_1]
-                    elif relations[plane_index_1][plane_index_2] == 1:
-                        plane_mask_dict[(plane_index_1, plane_index_2)] = layout_plane_depths[plane_index_1] < layout_plane_depths[plane_index_2]
-                        plane_mask_dict[(plane_index_2, plane_index_1)] = layout_plane_depths[plane_index_1] > layout_plane_depths[plane_index_2]
-                    else:
-                        plane_mask_dict[(plane_index_1, plane_index_2)] = layout_plane_depths[plane_index_1] > layout_plane_depths[plane_index_2]
-                        plane_mask_dict[(plane_index_2, plane_index_1)] = layout_plane_depths[plane_index_1] < layout_plane_depths[plane_index_2]
-                        pass
-                    pass
-                plane_mask = np.logical_and(plane_mask, plane_mask_dict[(plane_index_1, plane_index_2)])
-                continue
-            combination_depth[plane_mask] = layout_plane_depths[plane_index_1][plane_mask]
-            continue
-        if ((combination_depth < depth - 0.2) * valid_mask).sum() > valid_area * 0.1:
-            continue
-        combination_segmentation = combination[depths.argmin(0)]
-        combination_segmentation[combination_depth >= 10] = -1
-        consistent_area = (combination_segmentation == layoutSegmentation).sum()
-        if consistent_area < area * 0.9:
-            continue
-        layout = layoutPlaneIndices[combination_segmentation]
-        layout[combination_segmentation < 0] = -1
-        if get_boundary:
-            print(layoutPlaneIndices)
-            boundaries = {}
-            for plane_index_1 in combination:
-                for plane_index_2 in combination:
-                    if plane_index_2 <= plane_index_1:
-                        continue
-                    if relations[plane_index_1][plane_index_2] == 0:
-                        continue
-                    plane_mask = plane_mask_dict[(plane_index_1, plane_index_2)].astype(np.uint8)
-                    boundaries[(layoutPlaneIndices[plane_index_1], layoutPlaneIndices[plane_index_2])] = (cv2.dilate(plane_mask, np.ones((3, 3))) - cv2.erode(plane_mask, np.ones((3, 3))), relations[plane_index_1][plane_index_2])
-                    continue
-                continue
-            return layout, boundaries
-        return layout
-
-    layoutSegmentation[layout_plane_depths[0] > 1e-4] = layoutPlaneIndices[0]
-    if get_boundary:
-        return layoutSegmentation, {}
-    else:
-        return layoutSegmentation
-
-    layoutVisibleDepth = np.zeros(segmentation.shape)
-    for layout_index, points in enumerate(layoutPlanePoints):
-        xs = points[:, 0]
-        ys = points[:, 1]
-        layoutVisibleDepth[ys, xs] = layoutPlaneDepths[ys, xs, layout_index]
-        continue
-
-
-    invalidMask = {}
-    while True:
-        hasChange = False
-        layoutMasks = {}
-        for index_1, plane_1 in enumerate(layoutPlanes):
-            if index_1 in invalidMask:
-                continue
-            layoutMask = layoutPlaneDepths[:, :, index_1] > 1e-4
-            for index_2, plane_2 in enumerate(layoutPlanes):
-                if index_2 == index_1:
-                    continue
-                if index_2 in invalidMask:
-                    continue
-                if relations[index_1][index_2] == 0:
-                    continue
-                elif relations[index_1][index_2] == 1:
-                    layoutMask = np.logical_and(layoutMask, np.logical_or(layoutPlaneDepths[:, :, index_1] <= layoutPlaneDepths[:, :, index_2], layoutPlaneDepths[:, :, index_2] < 1e-4))
-                else:
-                    layoutMask = np.logical_and(layoutMask, layoutPlaneDepths[:, :, index_1] >= layoutPlaneDepths[:, :, index_2])
-                    pass
-                continue
-
-            if np.logical_and(layoutPlaneMasks[index_1], layoutMask).sum() < layoutPlaneMasks[index_1].sum() * 0.9:
-                print('invalid', index_1, np.logical_and(layoutPlaneMasks[index_1], layoutMask).sum(), layoutPlaneMasks[index_1].sum() * 0.9)
-                hasChange = True
-                invalidMask[index_1] = True
-                break
-            validLayoutMask = np.logical_and(layoutMask, layoutVisibleDepth > 1e-4)
-            layoutDepth = layoutPlaneDepths[:, :, index_1][validLayoutMask]
-            visibleDepth = layoutVisibleDepth[validLayoutMask]
-            if (layoutDepth < visibleDepth).sum() > len(visibleDepth) * 0.1:
-                print('invalid depth', index_1, (layoutDepth < visibleDepth).sum(), len(visibleDepth) * 0.1)
-                hasChange = True
-                invalidMask[index_1] = True
-                break
-            layoutMasks[index_1] = layoutMask
-            continue
-        if hasChange:
-            continue
-        for layoutIndex, layoutMask in layoutMasks.items():
-            layoutSegmentation[layoutMask] = layoutPlaneIndices[layoutIndex]
-            continue
-        break
-
-    if return_segmentation:
-        return layoutSegmentation
-    else:
-        return {}
+# def getLayout(planes, depth, plane_depths, plane_info, segmentation, camera, layout_labels={}, return_segmentation=True, get_boundary=True):
+#     parallelThreshold = np.cos(np.deg2rad(30))
+#
+#     layoutSegmentation = np.full(segmentation.shape, fill_value=-1)
+#
+#     layoutPlanePoints = []
+#     layoutPlaneMasks = []
+#     layoutPlaneIndices = []
+#     for planeIndex, info in enumerate(plane_info):
+#         if info[0][1] not in layout_labels:
+#             continue
+#         mask = segmentation == planeIndex
+#         ys, xs = mask.nonzero()
+#         if len(xs) < depth.shape[0] * depth.shape[1] * 0.02:
+#             continue
+#         layoutSegmentation[mask] = len(layoutPlaneIndices)
+#         layoutPlanePoints.append(np.stack([xs, ys], axis=-1))
+#         layoutPlaneMasks.append(mask)
+#         layoutPlaneIndices.append(planeIndex)
+#         continue
+#
+#     if len(layoutPlaneIndices) == 0:
+#         if get_boundary:
+#             if return_segmentation:
+#                 return layoutSegmentation, {}
+#             else:
+#                 return {}, {}
+#         else:
+#             if return_segmentation:
+#                 return layoutSegmentation
+#             else:
+#                 return {}
+#             pass
+#         pass
+#
+#     layoutPlaneInfo = zip(layoutPlanePoints, layoutPlaneMasks, layoutPlaneIndices)
+#     layoutPlaneInfo = sorted(layoutPlaneInfo, key=lambda x:-len(x[0]))
+#     layoutPlanePoints, layoutPlaneMasks, layoutPlaneIndices = zip(*layoutPlaneInfo)
+#
+#
+#     layout_areas = [len(points) for points in layoutPlanePoints]
+#     layoutPlaneIndices = np.array(layoutPlaneIndices)
+#     layout_plane_depths = plane_depths[layoutPlaneIndices]
+#     layout_planes = planes[layoutPlaneIndices]
+#
+#     relations = np.zeros((len(layoutPlanePoints), len(layoutPlanePoints)), dtype=np.int32)
+#     for index_1, points_1 in enumerate(layoutPlanePoints):
+#         plane_1 = layout_planes[index_1]
+#         offset_1 = np.linalg.norm(plane_1)
+#         normal_1 = plane_1 / max(offset_1, 1e-4)
+#         uv_1 = np.round(points_1.mean(0)).astype(np.int32)
+#         depth_value_1 = layout_plane_depths[index_1, uv_1[1], uv_1[0]]
+#         point_1 = np.array([(uv_1[0] - camera[2]) / camera[0], 1, -(uv_1[1] - camera[3]) / camera[1]]) * depth_value_1
+#         for index_2, points_2 in enumerate(layoutPlanePoints):
+#             if index_2 <= index_1:
+#                 continue
+#             plane_2 = layout_planes[index_2]
+#             offset_2 = np.linalg.norm(plane_2)
+#             normal_2 = plane_2 / max(offset_2, 1e-4)
+#             if np.abs(np.dot(normal_2, normal_1)) > parallelThreshold:
+#                 continue
+#             uv_2 = np.round(points_2.mean(0)).astype(np.int32)
+#             depth_value_2 = layout_plane_depths[index_2, uv_2[1], uv_2[0]]
+#             point_2 = np.array([(uv_2[0] - camera[2]) / camera[0], 1, -(uv_2[1] - camera[3]) / camera[1]]) * depth_value_2
+#
+#             if np.dot(normal_1, point_2 - point_1) <= 0 and np.dot(normal_2, point_1 - point_2) < 0:
+#                 relations[index_1][index_2] = 1
+#                 relations[index_2][index_1] = 1
+#             else:
+#                 relations[index_1][index_2] = 2
+#                 relations[index_2][index_1] = 2
+#                 pass
+#             continue
+#         continue
+#
+#
+#     combinations = []
+#     indices = range(len(layoutPlaneIndices))
+#     for num_planes in range(2, len(layoutPlaneIndices) + 1):
+#         for plane_indices in itertools.combinations(indices, num_planes):
+#             combinations.append((plane_indices, sum([layout_areas[plane_index] for plane_index in plane_indices])))
+#             continue
+#         continue
+#     combinations = sorted(combinations, key=lambda x:-x[1])
+#     combinations = [combination for combination in combinations if combination[1] > layout_areas[0]]
+#
+#     valid_mask = depth > 1e-4
+#     valid_area = valid_mask.sum()
+#     layout_found = False
+#     layout_plane_depths[layout_plane_depths < 1e-4] = 10
+#     plane_mask_dict = {}
+#     for combination, area in combinations:
+#         combination = np.array(combination)
+#         depths = layout_plane_depths[combination]
+#         combination_depth = np.zeros(segmentation.shape)
+#         for plane_index_1 in combination:
+#             plane_mask = np.ones(segmentation.shape, dtype=np.bool)
+#             for plane_index_2 in combination:
+#                 if plane_index_2 == plane_index_1:
+#                     continue
+#                 if (plane_index_1, plane_index_2) not in plane_mask_dict:
+#                     if relations[plane_index_1][plane_index_2] == 0:
+#                         plane_mask_dict[(plane_index_1, plane_index_2)] = 1 - layoutPlaneMasks[plane_index_2]
+#                         plane_mask_dict[(plane_index_2, plane_index_1)] = 1 - layoutPlaneMasks[plane_index_1]
+#                     elif relations[plane_index_1][plane_index_2] == 1:
+#                         plane_mask_dict[(plane_index_1, plane_index_2)] = layout_plane_depths[plane_index_1] < layout_plane_depths[plane_index_2]
+#                         plane_mask_dict[(plane_index_2, plane_index_1)] = layout_plane_depths[plane_index_1] > layout_plane_depths[plane_index_2]
+#                     else:
+#                         plane_mask_dict[(plane_index_1, plane_index_2)] = layout_plane_depths[plane_index_1] > layout_plane_depths[plane_index_2]
+#                         plane_mask_dict[(plane_index_2, plane_index_1)] = layout_plane_depths[plane_index_1] < layout_plane_depths[plane_index_2]
+#                         pass
+#                     pass
+#                 plane_mask = np.logical_and(plane_mask, plane_mask_dict[(plane_index_1, plane_index_2)])
+#                 continue
+#             combination_depth[plane_mask] = layout_plane_depths[plane_index_1][plane_mask]
+#             continue
+#         if ((combination_depth < depth - 0.2) * valid_mask).sum() > valid_area * 0.1:
+#             continue
+#         combination_segmentation = combination[depths.argmin(0)]
+#         combination_segmentation[combination_depth >= 10] = -1
+#         consistent_area = (combination_segmentation == layoutSegmentation).sum()
+#         if consistent_area < area * 0.9:
+#             continue
+#         layout = layoutPlaneIndices[combination_segmentation]
+#         layout[combination_segmentation < 0] = -1
+#         if get_boundary:
+#             print(layoutPlaneIndices)
+#             boundaries = {}
+#             for plane_index_1 in combination:
+#                 for plane_index_2 in combination:
+#                     if plane_index_2 <= plane_index_1:
+#                         continue
+#                     if relations[plane_index_1][plane_index_2] == 0:
+#                         continue
+#                     plane_mask = plane_mask_dict[(plane_index_1, plane_index_2)].astype(np.uint8)
+#                     boundaries[(layoutPlaneIndices[plane_index_1], layoutPlaneIndices[plane_index_2])] = (cv2.dilate(plane_mask, np.ones((3, 3))) - cv2.erode(plane_mask, np.ones((3, 3))), relations[plane_index_1][plane_index_2])
+#                     continue
+#                 continue
+#             return layout, boundaries
+#         return layout
+#
+#     layoutSegmentation[layout_plane_depths[0] > 1e-4] = layoutPlaneIndices[0]
+#     if get_boundary:
+#         return layoutSegmentation, {}
+#     else:
+#         return layoutSegmentation
+#
+#     layoutVisibleDepth = np.zeros(segmentation.shape)
+#     for layout_index, points in enumerate(layoutPlanePoints):
+#         xs = points[:, 0]
+#         ys = points[:, 1]
+#         layoutVisibleDepth[ys, xs] = layoutPlaneDepths[ys, xs, layout_index]
+#         continue
+#
+#
+#     invalidMask = {}
+#     while True:
+#         hasChange = False
+#         layoutMasks = {}
+#         for index_1, plane_1 in enumerate(layoutPlanes):
+#             if index_1 in invalidMask:
+#                 continue
+#             layoutMask = layoutPlaneDepths[:, :, index_1] > 1e-4
+#             for index_2, plane_2 in enumerate(layoutPlanes):
+#                 if index_2 == index_1:
+#                     continue
+#                 if index_2 in invalidMask:
+#                     continue
+#                 if relations[index_1][index_2] == 0:
+#                     continue
+#                 elif relations[index_1][index_2] == 1:
+#                     layoutMask = np.logical_and(layoutMask, np.logical_or(layoutPlaneDepths[:, :, index_1] <= layoutPlaneDepths[:, :, index_2], layoutPlaneDepths[:, :, index_2] < 1e-4))
+#                 else:
+#                     layoutMask = np.logical_and(layoutMask, layoutPlaneDepths[:, :, index_1] >= layoutPlaneDepths[:, :, index_2])
+#                     pass
+#                 continue
+#
+#             if np.logical_and(layoutPlaneMasks[index_1], layoutMask).sum() < layoutPlaneMasks[index_1].sum() * 0.9:
+#                 print('invalid', index_1, np.logical_and(layoutPlaneMasks[index_1], layoutMask).sum(), layoutPlaneMasks[index_1].sum() * 0.9)
+#                 hasChange = True
+#                 invalidMask[index_1] = True
+#                 break
+#             validLayoutMask = np.logical_and(layoutMask, layoutVisibleDepth > 1e-4)
+#             layoutDepth = layoutPlaneDepths[:, :, index_1][validLayoutMask]
+#             visibleDepth = layoutVisibleDepth[validLayoutMask]
+#             if (layoutDepth < visibleDepth).sum() > len(visibleDepth) * 0.1:
+#                 print('invalid depth', index_1, (layoutDepth < visibleDepth).sum(), len(visibleDepth) * 0.1)
+#                 hasChange = True
+#                 invalidMask[index_1] = True
+#                 break
+#             layoutMasks[index_1] = layoutMask
+#             continue
+#         if hasChange:
+#             continue
+#         for layoutIndex, layoutMask in layoutMasks.items():
+#             layoutSegmentation[layoutMask] = layoutPlaneIndices[layoutIndex]
+#             continue
+#         break
+#
+#     if return_segmentation:
+#         return layoutSegmentation
+#     else:
+#         return {}
 
 
 ## Get structures
-def getStructures(image, planes, plane_info, segmentation, depth, camera):
-    parallelThreshold = np.cos(np.deg2rad(30))
-
-    planePoints = []
-    invalidPlanes = {}
-    for planeIndex in range(len(planes)):
-        mask = segmentation == planeIndex
-        ys, xs = mask.nonzero()
-        if len(ys) == 0:
-            planePoints.append([])
-            invalidPlanes[planeIndex] = True
-            continue
-        planePoints.append(np.round(np.array([xs.mean(), ys.mean()])).astype(np.int32))
-        continue
-
-    structurePlanesMap = {}
-    individualPlanes = []
-    for planeIndex, info in enumerate(plane_info):
-        if planeIndex in invalidPlanes:
-            continue
-        if len(info) == 1:
-            individualPlanes.append(planeIndex)
-            continue
-        for structureIndex, _ in info[1:]:
-            if structureIndex not in structurePlanesMap:
-                structurePlanesMap[structureIndex] = []
-                pass
-            structurePlanesMap[structureIndex].append(planeIndex)
-            continue
-        continue
-
-    relations = np.zeros((len(planes), len(planes)), dtype=np.int32)
-    structures = []
-    for structurePlaneIndices in structurePlanesMap.values():
-        if len(structurePlaneIndices) == 1:
-            if structurePlaneIndices[0] not in individualPlanes:
-                individualPlanes.append(structurePlaneIndices[0])
-                pass
-            continue
-
-        planePairs = itertools.combinations(structurePlaneIndices, 2)
-        planePairs = np.array(list(planePairs))
-        for planeIndex_1, planeIndex_2 in planePairs:
-            if relations[planeIndex_1][planeIndex_2] != 0:
-                continue
-            plane_1 = planes[planeIndex_1]
-            offset_1 = np.linalg.norm(plane_1)
-            normal_1 = plane_1 / max(offset_1, 1e-4)
-
-            plane_2 = planes[planeIndex_2]
-            offset_2 = np.linalg.norm(plane_2)
-            normal_2 = plane_2 / max(offset_2, 1e-4)
-
-            if np.abs(np.dot(normal_2, normal_1)) > parallelThreshold:
-                continue
-
-            uv_1 = planePoints[planeIndex_1]
-            depth_1 = depth[uv_1[1], uv_1[0]]
-            point_1 = np.array([(uv_1[0] - camera[2]) / camera[0] * depth_1, depth_1, -(uv_1[1] - camera[3]) / camera[1] * depth_1])
-
-            uv_2 = planePoints[planeIndex_2]
-            depth_2 = depth[uv_2[1], uv_2[0]]
-            point_2 = np.array([(uv_2[0] - camera[2]) / camera[0] * depth_2, depth_2, -(uv_2[1] - camera[3]) / camera[1] * depth_2])
-
-
-            if np.dot(normal_1, point_2 - point_1) <= 0 and np.dot(normal_2, point_1 - point_2) < 0:
-                relations[planeIndex_1][planeIndex_2] = 1
-                relations[planeIndex_2][planeIndex_1] = 1
-            else:
-                relations[planeIndex_1][planeIndex_2] = 2
-                relations[planeIndex_2][planeIndex_1] = 2
-                pass
-            continue
-
-        planePairs = np.array(list(planePairs))
-        planePairRelations = relations[planePairs[:, 0], planePairs[:, 1]]
-        numConvex = (planePairRelations == 1).sum()
-        numConcave = (planePairRelations == 2).sum()
-
-        if numConvex == 0 and numConcave == 0:
-            for planeIndex in structurePlaneIndices:
-                if planeIndex not in individualPlanes:
-                    individualPlanes.append(planeIndex)
-                    pass
-                continue
-        elif numConcave == 0:
-            structures.append((structurePlaneIndices, 0))
-        elif numConvex == 0:
-            structures.append((structurePlaneIndices, 1))
-        else:
-            targetRelation = 1 if numConvex > numConcave else 2
-            planePairs = planePairs[planePairRelations == targetRelation]
-            adjacency_matrix = np.diag(np.ones(len(planes), dtype=np.bool))
-            adjacency_matrix[planePairs[:, 0], planePairs[:, 1]] = True
-            adjacency_matrix[planePairs[:, 1], planePairs[:, 0]] = True
-            usedMask = {}
-            groupPlaneIndices = (adjacency_matrix.sum(-1) > 1).nonzero()[0]
-            for groupPlaneIndex in groupPlaneIndices:
-                if groupPlaneIndex in usedMask:
-                    continue
-                groupStructure = adjacency_matrix[groupPlaneIndex].copy()
-                for neighbor in groupStructure.nonzero()[0]:
-                    if np.any(adjacency_matrix[neighbor] < groupStructure):
-                        groupStructure[neighbor] = 0
-                        pass
-                    continue
-                groupStructure = groupStructure.nonzero()[0]
-                if len(groupStructure) == 1:
-                    if groupStructure[0] not in individualPlanes:
-                        individualPlanes.append(groupStructure[0])
-                        pass
-                else:
-                    structures.append((structurePlaneIndices, targetRelation - 1))
-                    pass
-                for planeIndex in groupStructure:
-                    usedMask[planeIndex] = True
-                    continue
-                continue
-            for planeIndex in structurePlaneIndices:
-                if planeIndex not in usedMask:
-                    if planeIndex not in individualPlanes:
-                        individualPlanes.append(planeIndex)
-                        pass
-                    pass
-                continue
-            pass
-        continue
-    structures += [([planeIndex], 0) for planeIndex in individualPlanes]
-
-    labelStructures = {}
-    for structureIndex, (planeIndices, convex) in enumerate(structures):
-        structurePlanes = [planes[planeIndex] for planeIndex in planeIndices]
-        if len(structurePlanes) == 1:
-            if 0 not in labelStructures:
-                labelStructures[0] = []
-                pass
-            mask = segmentation == planeIndices[0]
-            labelStructures[0].append((structurePlanes[0], mask))
-            continue
-
-        convex = convex == 0
-
-        masks = []
-        for planeIndex in planeIndices:
-            masks.append(segmentation == planeIndex)
-            continue
-        mask = np.any(np.array(masks), axis=0)
-
-        structurePlanes = np.array(structurePlanes)
-        structurePlaneDepths = calcPlaneDepths(structurePlanes, segmentation.shape[1], segmentation.shape[0], camera, max_depth=-1)
-        if convex:
-            structurePlaneDepths[structurePlaneDepths < 1e-4] = 10
-            structurePlaneDepth = structurePlaneDepths.min(-1)
-        else:
-            structurePlaneDepth = structurePlaneDepths.max(-1)
-            pass
-
-        structureDepth = structurePlaneDepth[mask]
-        visibleDepth = depth[mask]
-        validMask = visibleDepth > 1e-4
-        structureDepth = structureDepth[validMask]
-        visibleDepth = visibleDepth[validMask]
-
-        if (np.abs(structureDepth - visibleDepth) > 0.1).sum() > len(visibleDepth) * 0.2:
-
-            if 0 not in labelStructures:
-                labelStructures[0] = []
-                pass
-            for planeIndex, mask in zip(planeIndices, masks):
-                labelStructures[0].append((planes[planeIndex], mask))
-                continue
-            continue
-
-        structurePlanes = sorted(structurePlanes, key=lambda x: x[0])
-        if len(planeIndices) == 3:
-            dotProducts = [np.abs(plane[2] / max(np.linalg.norm(plane), 1e-4)) for plane in structurePlanes]
-            horizontalPlaneIndex = np.array(dotProducts).argmax()
-            structurePlanes = [structurePlanes[horizontalPlaneIndex]] + structurePlanes[:horizontalPlaneIndex] + structurePlanes[horizontalPlaneIndex + 1:]
-            pass
-
-        parameters = np.concatenate(structurePlanes, axis=0)
-        if convex:
-            label = (len(planeIndices) - 2) * 2 + 1
-        else:
-            label = (len(planeIndices) - 2) * 2 + 2
-            pass
-        if label not in labelStructures:
-            labelStructures[label] = []
-            pass
-        labelStructures[label].append((parameters, mask))
-        continue
-
-    return labelStructures
+# def getStructures(image, planes, plane_info, segmentation, depth, camera):
+#     parallelThreshold = np.cos(np.deg2rad(30))
+#
+#     planePoints = []
+#     invalidPlanes = {}
+#     for planeIndex in range(len(planes)):
+#         mask = segmentation == planeIndex
+#         ys, xs = mask.nonzero()
+#         if len(ys) == 0:
+#             planePoints.append([])
+#             invalidPlanes[planeIndex] = True
+#             continue
+#         planePoints.append(np.round(np.array([xs.mean(), ys.mean()])).astype(np.int32))
+#         continue
+#
+#     structurePlanesMap = {}
+#     individualPlanes = []
+#     for planeIndex, info in enumerate(plane_info):
+#         if planeIndex in invalidPlanes:
+#             continue
+#         if len(info) == 1:
+#             individualPlanes.append(planeIndex)
+#             continue
+#         for structureIndex, _ in info[1:]:
+#             if structureIndex not in structurePlanesMap:
+#                 structurePlanesMap[structureIndex] = []
+#                 pass
+#             structurePlanesMap[structureIndex].append(planeIndex)
+#             continue
+#         continue
+#
+#     relations = np.zeros((len(planes), len(planes)), dtype=np.int32)
+#     structures = []
+#     for structurePlaneIndices in structurePlanesMap.values():
+#         if len(structurePlaneIndices) == 1:
+#             if structurePlaneIndices[0] not in individualPlanes:
+#                 individualPlanes.append(structurePlaneIndices[0])
+#                 pass
+#             continue
+#
+#         planePairs = itertools.combinations(structurePlaneIndices, 2)
+#         planePairs = np.array(list(planePairs))
+#         for planeIndex_1, planeIndex_2 in planePairs:
+#             if relations[planeIndex_1][planeIndex_2] != 0:
+#                 continue
+#             plane_1 = planes[planeIndex_1]
+#             offset_1 = np.linalg.norm(plane_1)
+#             normal_1 = plane_1 / max(offset_1, 1e-4)
+#
+#             plane_2 = planes[planeIndex_2]
+#             offset_2 = np.linalg.norm(plane_2)
+#             normal_2 = plane_2 / max(offset_2, 1e-4)
+#
+#             if np.abs(np.dot(normal_2, normal_1)) > parallelThreshold:
+#                 continue
+#
+#             uv_1 = planePoints[planeIndex_1]
+#             depth_1 = depth[uv_1[1], uv_1[0]]
+#             point_1 = np.array([(uv_1[0] - camera[2]) / camera[0] * depth_1, depth_1, -(uv_1[1] - camera[3]) / camera[1] * depth_1])
+#
+#             uv_2 = planePoints[planeIndex_2]
+#             depth_2 = depth[uv_2[1], uv_2[0]]
+#             point_2 = np.array([(uv_2[0] - camera[2]) / camera[0] * depth_2, depth_2, -(uv_2[1] - camera[3]) / camera[1] * depth_2])
+#
+#
+#             if np.dot(normal_1, point_2 - point_1) <= 0 and np.dot(normal_2, point_1 - point_2) < 0:
+#                 relations[planeIndex_1][planeIndex_2] = 1
+#                 relations[planeIndex_2][planeIndex_1] = 1
+#             else:
+#                 relations[planeIndex_1][planeIndex_2] = 2
+#                 relations[planeIndex_2][planeIndex_1] = 2
+#                 pass
+#             continue
+#
+#         planePairs = np.array(list(planePairs))
+#         planePairRelations = relations[planePairs[:, 0], planePairs[:, 1]]
+#         numConvex = (planePairRelations == 1).sum()
+#         numConcave = (planePairRelations == 2).sum()
+#
+#         if numConvex == 0 and numConcave == 0:
+#             for planeIndex in structurePlaneIndices:
+#                 if planeIndex not in individualPlanes:
+#                     individualPlanes.append(planeIndex)
+#                     pass
+#                 continue
+#         elif numConcave == 0:
+#             structures.append((structurePlaneIndices, 0))
+#         elif numConvex == 0:
+#             structures.append((structurePlaneIndices, 1))
+#         else:
+#             targetRelation = 1 if numConvex > numConcave else 2
+#             planePairs = planePairs[planePairRelations == targetRelation]
+#             adjacency_matrix = np.diag(np.ones(len(planes), dtype=np.bool))
+#             adjacency_matrix[planePairs[:, 0], planePairs[:, 1]] = True
+#             adjacency_matrix[planePairs[:, 1], planePairs[:, 0]] = True
+#             usedMask = {}
+#             groupPlaneIndices = (adjacency_matrix.sum(-1) > 1).nonzero()[0]
+#             for groupPlaneIndex in groupPlaneIndices:
+#                 if groupPlaneIndex in usedMask:
+#                     continue
+#                 groupStructure = adjacency_matrix[groupPlaneIndex].copy()
+#                 for neighbor in groupStructure.nonzero()[0]:
+#                     if np.any(adjacency_matrix[neighbor] < groupStructure):
+#                         groupStructure[neighbor] = 0
+#                         pass
+#                     continue
+#                 groupStructure = groupStructure.nonzero()[0]
+#                 if len(groupStructure) == 1:
+#                     if groupStructure[0] not in individualPlanes:
+#                         individualPlanes.append(groupStructure[0])
+#                         pass
+#                 else:
+#                     structures.append((structurePlaneIndices, targetRelation - 1))
+#                     pass
+#                 for planeIndex in groupStructure:
+#                     usedMask[planeIndex] = True
+#                     continue
+#                 continue
+#             for planeIndex in structurePlaneIndices:
+#                 if planeIndex not in usedMask:
+#                     if planeIndex not in individualPlanes:
+#                         individualPlanes.append(planeIndex)
+#                         pass
+#                     pass
+#                 continue
+#             pass
+#         continue
+#     structures += [([planeIndex], 0) for planeIndex in individualPlanes]
+#
+#     labelStructures = {}
+#     for structureIndex, (planeIndices, convex) in enumerate(structures):
+#         structurePlanes = [planes[planeIndex] for planeIndex in planeIndices]
+#         if len(structurePlanes) == 1:
+#             if 0 not in labelStructures:
+#                 labelStructures[0] = []
+#                 pass
+#             mask = segmentation == planeIndices[0]
+#             labelStructures[0].append((structurePlanes[0], mask))
+#             continue
+#
+#         convex = convex == 0
+#
+#         masks = []
+#         for planeIndex in planeIndices:
+#             masks.append(segmentation == planeIndex)
+#             continue
+#         mask = np.any(np.array(masks), axis=0)
+#
+#         structurePlanes = np.array(structurePlanes)
+#         structurePlaneDepths = calcPlaneDepths(structurePlanes, segmentation.shape[1], segmentation.shape[0], camera, max_depth=-1)
+#         if convex:
+#             structurePlaneDepths[structurePlaneDepths < 1e-4] = 10
+#             structurePlaneDepth = structurePlaneDepths.min(-1)
+#         else:
+#             structurePlaneDepth = structurePlaneDepths.max(-1)
+#             pass
+#
+#         structureDepth = structurePlaneDepth[mask]
+#         visibleDepth = depth[mask]
+#         validMask = visibleDepth > 1e-4
+#         structureDepth = structureDepth[validMask]
+#         visibleDepth = visibleDepth[validMask]
+#
+#         if (np.abs(structureDepth - visibleDepth) > 0.1).sum() > len(visibleDepth) * 0.2:
+#
+#             if 0 not in labelStructures:
+#                 labelStructures[0] = []
+#                 pass
+#             for planeIndex, mask in zip(planeIndices, masks):
+#                 labelStructures[0].append((planes[planeIndex], mask))
+#                 continue
+#             continue
+#
+#         structurePlanes = sorted(structurePlanes, key=lambda x: x[0])
+#         if len(planeIndices) == 3:
+#             dotProducts = [np.abs(plane[2] / max(np.linalg.norm(plane), 1e-4)) for plane in structurePlanes]
+#             horizontalPlaneIndex = np.array(dotProducts).argmax()
+#             structurePlanes = [structurePlanes[horizontalPlaneIndex]] + structurePlanes[:horizontalPlaneIndex] + structurePlanes[horizontalPlaneIndex + 1:]
+#             pass
+#
+#         parameters = np.concatenate(structurePlanes, axis=0)
+#         if convex:
+#             label = (len(planeIndices) - 2) * 2 + 1
+#         else:
+#             label = (len(planeIndices) - 2) * 2 + 2
+#             pass
+#         if label not in labelStructures:
+#             labelStructures[label] = []
+#             pass
+#         labelStructures[label].append((parameters, mask))
+#         continue
+#
+#     return labelStructures
 
 
 def crossProductMatrix(vector):

@@ -311,128 +311,128 @@ class PlaneDatasetSingle(Dataset):
 
         info = [image.transpose((2, 0, 1)).astype(np.float32), image_metas, rpn_match, rpn_bbox.astype(np.float32), gt_class_ids, gt_boxes.astype(np.float32), gt_masks.transpose((2, 0, 1)).astype(np.float32), gt_parameters, depth.astype(np.float32), segmentation, camera.astype(np.float32)]
 
-        if self.loadNeighborImage:
-            if imageIndex + self.options.frameGap < len(scene.imagePaths):
-                imagePath = scene.imagePaths[imageIndex + self.options.frameGap]
-            else:
-                imagePath = scene.imagePaths[imageIndex - self.options.frameGap]
-                pass
-
-            image_2 = cv2.imread(imagePath)
-
-            image_2 = cv2.resize(image_2, (self.config.IMAGE_MAX_DIM, self.config.IMAGE_MAX_DIM))
-
-            info.append(image_2.transpose((2, 0, 1)).astype(np.float32))
-
-            extrinsics_2_inv = []
-            posePath = imagePath.replace('color', 'pose').replace('.jpg', '.txt')
-            with open(posePath, 'r') as f:
-                for line in f:
-                    extrinsics_2_inv += [float(value) for value in line.strip().split(' ') if value.strip() != '']
-                    continue
-                f.close()
-                pass
-            extrinsics_2_inv = np.array(extrinsics_2_inv).reshape((4, 4))
-            extrinsics_2 = np.linalg.inv(extrinsics_2_inv)
-
-            temp = extrinsics_2[1].copy()
-            extrinsics_2[1] = extrinsics_2[2]
-            extrinsics_2[2] = -temp
-
-            transformation = np.matmul(extrinsics_2, np.linalg.inv(extrinsics))
-            if np.any(np.isnan(transformation)):
-                transformation = np.concatenate([np.diag(np.ones(3)), np.zeros((3, 1))], axis=-1)
-                pass
-
-            rotation = transformation[:3, :3]
-            translation = transformation[:3, 3]
-            axis, angle = utils.rotationMatrixToAxisAngle(rotation)
-            pose = np.concatenate([translation, axis * angle], axis=0).astype(np.float32)
-            info.append(pose)
-            info.append(scene.scenePath + ' ' + str(imageIndex))
-            pass
+        # if self.loadNeighborImage:
+        #     if imageIndex + self.options.frameGap < len(scene.imagePaths):
+        #         imagePath = scene.imagePaths[imageIndex + self.options.frameGap]
+        #     else:
+        #         imagePath = scene.imagePaths[imageIndex - self.options.frameGap]
+        #         pass
+        #
+        #     image_2 = cv2.imread(imagePath)
+        #
+        #     image_2 = cv2.resize(image_2, (self.config.IMAGE_MAX_DIM, self.config.IMAGE_MAX_DIM))
+        #
+        #     info.append(image_2.transpose((2, 0, 1)).astype(np.float32))
+        #
+        #     extrinsics_2_inv = []
+        #     posePath = imagePath.replace('color', 'pose').replace('.jpg', '.txt')
+        #     with open(posePath, 'r') as f:
+        #         for line in f:
+        #             extrinsics_2_inv += [float(value) for value in line.strip().split(' ') if value.strip() != '']
+        #             continue
+        #         f.close()
+        #         pass
+        #     extrinsics_2_inv = np.array(extrinsics_2_inv).reshape((4, 4))
+        #     extrinsics_2 = np.linalg.inv(extrinsics_2_inv)
+        #
+        #     temp = extrinsics_2[1].copy()
+        #     extrinsics_2[1] = extrinsics_2[2]
+        #     extrinsics_2[2] = -temp
+        #
+        #     transformation = np.matmul(extrinsics_2, np.linalg.inv(extrinsics))
+        #     if np.any(np.isnan(transformation)):
+        #         transformation = np.concatenate([np.diag(np.ones(3)), np.zeros((3, 1))], axis=-1)
+        #         pass
+        #
+        #     rotation = transformation[:3, :3]
+        #     translation = transformation[:3, 3]
+        #     axis, angle = utils.rotationMatrixToAxisAngle(rotation)
+        #     pose = np.concatenate([translation, axis * angle], axis=0).astype(np.float32)
+        #     info.append(pose)
+        #     info.append(scene.scenePath + ' ' + str(imageIndex))
+        #     pass
 
         return info
 
 
-    def getAnchorPlanesNormalOffset(self, visualize=False):
-        for k in [7, ]:
-            print('k', k)
-            filename_N = self.dataFolder + '/anchor_planes_N_' + str(k) + '.npy'
-            filename_d = self.dataFolder + '/anchor_planes_d.npy'
-            if os.path.exists(filename_N) and os.path.exists(filename_d) and False:
-                return
+    # def getAnchorPlanesNormalOffset(self, visualize=False):
+    #     for k in [7, ]:
+    #         print('k', k)
+    #         filename_N = self.dataFolder + '/anchor_planes_N_' + str(k) + '.npy'
+    #         filename_d = self.dataFolder + '/anchor_planes_d.npy'
+    #         if os.path.exists(filename_N) and os.path.exists(filename_d) and False:
+    #             return
+    #
+    #         if os.path.exists('test/anchor_planes/all_planes.npy'):
+    #             all_planes = np.load('test/anchor_planes/all_planes.npy')
+    #         else:
+    #             all_planes = []
+    #             for sceneIndex, imageIndex in self.sceneImageIndices[:10000]:
+    #                 if len(all_planes) % 100 == 0:
+    #                     print(len(all_planes))
+    #                     pass
+    #                 scene = self.scenes[sceneIndex]
+    #
+    #                 image, planes, plane_info, segmentation, depth, camera, extrinsics = scene[imageIndex]
+    #                 planes = planes[np.linalg.norm(planes, axis=-1) > 1e-4]
+    #                 if len(planes) == 0:
+    #                     continue
+    #                 all_planes.append(planes)
+    #                 continue
+    #             all_planes = np.concatenate(all_planes, axis=0)
+    #             np.save('test/anchor_planes/all_planes.npy', all_planes)
+    #             pass
+    #
+    #         from sklearn.cluster import KMeans
+    #
+    #         num_anchor_planes_N = k
+    #         num_anchor_planes_d = 3
+    #
+    #         offsets = np.linalg.norm(all_planes, axis=-1)
+    #         normals = all_planes / np.expand_dims(offsets, -1)
+    #
+    #         kmeans_N = KMeans(n_clusters=num_anchor_planes_N).fit(normals)
+    #         self.anchor_planes_N = kmeans_N.cluster_centers_
+    #
+    #         ## Global offset anchors
+    #         kmeans_d = KMeans(n_clusters=num_anchor_planes_d).fit(np.expand_dims(offsets, -1))
+    #         self.anchor_planes_d = kmeans_d.cluster_centers_
+    #
+    #         if visualize:
+    #             color_map = utils.ColorPalette(max(num_anchor_planes_N, num_anchor_planes_d)).getColorMap()
+    #             normals_rotated = normals.copy()
+    #             normals_rotated[:, 1] = normals[:, 2]
+    #             normals_rotated[:, 2] = -normals[:, 1]
+    #             plane_cloud = np.concatenate([normals_rotated, color_map[kmeans_N.labels_]], axis=-1)
+    #             utils.writePointCloud('test/anchor_planes/anchor_planes_N.ply', plane_cloud)
+    #
+    #             plane_cloud = np.concatenate([all_planes, color_map[kmeans_d.labels_]], axis=-1)
+    #             utils.writePointCloud('test/anchor_planes/anchor_planes_d.ply', plane_cloud)
+    #
+    #             width = 500
+    #             height = 500
+    #
+    #             Us = np.round(np.arctan2(normals[:, 1], normals[:, 0]) / np.pi * width).astype(np.int32)
+    #             Vs = np.round((1 - (np.arcsin(normals[:, 2]) + np.pi / 2) / np.pi) * height).astype(np.int32)
+    #             indices = Vs * width + Us
+    #             validMask = np.logical_and(np.logical_and(Us >=  0, Us < width), np.logical_and(Vs >=  0, Vs < height))
+    #             indices = indices[validMask]
+    #
+    #             normalImage = np.zeros((height * width, 3))
+    #             normalImage[indices] = color_map[kmeans_N.labels_[validMask]]
+    #             normalImage = normalImage.reshape((height, width, 3))
+    #             cv2.imwrite('test/anchor_planes/normal_color_' + str(k) + '.png', normalImage)
+    #
+    #             exit(1)
+    #             pass
+    #         np.save(filename_N, self.anchor_planes_N)
+    #         np.save(filename_d, self.anchor_planes_d)
+    #         continue
+    #     return
 
-            if os.path.exists('test/anchor_planes/all_planes.npy'):
-                all_planes = np.load('test/anchor_planes/all_planes.npy')
-            else:
-                all_planes = []
-                for sceneIndex, imageIndex in self.sceneImageIndices[:10000]:
-                    if len(all_planes) % 100 == 0:
-                        print(len(all_planes))
-                        pass
-                    scene = self.scenes[sceneIndex]
 
-                    image, planes, plane_info, segmentation, depth, camera, extrinsics = scene[imageIndex]
-                    planes = planes[np.linalg.norm(planes, axis=-1) > 1e-4]
-                    if len(planes) == 0:
-                        continue
-                    all_planes.append(planes)
-                    continue
-                all_planes = np.concatenate(all_planes, axis=0)
-                np.save('test/anchor_planes/all_planes.npy', all_planes)
-                pass
+def load_image_gt(config, image_id, image, depth, mask, class_ids, parameters, augment=False, use_mini_mask=True):
 
-            from sklearn.cluster import KMeans
-
-            num_anchor_planes_N = k
-            num_anchor_planes_d = 3
-
-            offsets = np.linalg.norm(all_planes, axis=-1)
-            normals = all_planes / np.expand_dims(offsets, -1)
-
-            kmeans_N = KMeans(n_clusters=num_anchor_planes_N).fit(normals)
-            self.anchor_planes_N = kmeans_N.cluster_centers_
-
-            ## Global offset anchors
-            kmeans_d = KMeans(n_clusters=num_anchor_planes_d).fit(np.expand_dims(offsets, -1))
-            self.anchor_planes_d = kmeans_d.cluster_centers_
-
-            if visualize:
-                color_map = utils.ColorPalette(max(num_anchor_planes_N, num_anchor_planes_d)).getColorMap()
-                normals_rotated = normals.copy()
-                normals_rotated[:, 1] = normals[:, 2]
-                normals_rotated[:, 2] = -normals[:, 1]
-                plane_cloud = np.concatenate([normals_rotated, color_map[kmeans_N.labels_]], axis=-1)
-                utils.writePointCloud('test/anchor_planes/anchor_planes_N.ply', plane_cloud)
-
-                plane_cloud = np.concatenate([all_planes, color_map[kmeans_d.labels_]], axis=-1)
-                utils.writePointCloud('test/anchor_planes/anchor_planes_d.ply', plane_cloud)
-
-                width = 500
-                height = 500
-
-                Us = np.round(np.arctan2(normals[:, 1], normals[:, 0]) / np.pi * width).astype(np.int32)
-                Vs = np.round((1 - (np.arcsin(normals[:, 2]) + np.pi / 2) / np.pi) * height).astype(np.int32)
-                indices = Vs * width + Us
-                validMask = np.logical_and(np.logical_and(Us >=  0, Us < width), np.logical_and(Vs >=  0, Vs < height))
-                indices = indices[validMask]
-
-                normalImage = np.zeros((height * width, 3))
-                normalImage[indices] = color_map[kmeans_N.labels_[validMask]]
-                normalImage = normalImage.reshape((height, width, 3))
-                cv2.imwrite('test/anchor_planes/normal_color_' + str(k) + '.png', normalImage)
-
-                exit(1)
-                pass
-            np.save(filename_N, self.anchor_planes_N)
-            np.save(filename_d, self.anchor_planes_d)
-            continue
-        return
-
-
-def load_image_gt(config, image_id, image, depth, mask, class_ids, parameters, augment=False,
-                  use_mini_mask=True):
     """Load and return ground truth data for an image (image, mask, bounding boxes).
 
     augment: If true, apply random image augmentation. Currently, only

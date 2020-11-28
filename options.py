@@ -22,7 +22,7 @@ def parse_args():
                         default=1, type=int)
     parser.add_argument('--batchSize', dest='batchSize',
                         help='batch size',
-                        default=16, type=int)
+                        default=5, type=int)
     parser.add_argument('--dataset', dest='dataset',
                         help='dataset name for training',
                         default='', type=str)
@@ -96,7 +96,7 @@ def parse_args():
                         help='*.data path')
     parser.add_argument('--multiScale', action='store_true',
                         help='adjust (67%% - 150%%) imgSize every 10 batches')
-    parser.add_argument('--imgSize', nargs='+', type=int, default=[416],
+    parser.add_argument('--imgSize', nargs='+', type=int, default=[640], #default=[416],
                         help='[min_train, max-train, test] img sizes')
     parser.add_argument('--rect', action='store_true',
                         help='rectangular training')

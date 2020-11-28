@@ -124,7 +124,7 @@ def train(options):
                     continue
                 rpn_class_logits, rpn_pred_bbox, target_class_ids, mrcnn_class_logits, target_deltas, mrcnn_bbox, target_mask, mrcnn_mask, target_parameters, mrcnn_parameters, detections, detection_masks, detection_gt_parameters, detection_gt_masks, rpn_rois, roi_features, roi_indices, feature_map, depth_np_pred = model.predict([images, image_metas, gt_class_ids, gt_boxes, gt_masks, gt_parameters, camera], mode='training_detection', use_nms=2, use_refinement='refinement' in options.suffix, return_feature_map=True)
 
-                rpn_class_loss, rpn_bbox_loss, mrcnn_class_loss, mrcnn_bbox_loss, mrcnn_mask_loss, mrcnn_parameter_loss = compute_losses(config, rpn_match, rpn_bbox, rpn_class_logits, rpn_pred_bbox, target_class_ids, mrcnn_class_logits, target_deltas, mrcnn_bbox, target_mask, mrcnn_mask, target_parameters, mrcnn_parameters)
+                rpn_class_loss, rpn_bbox_loss, mrcnn_class_loss, mrcnn_bbox_loss, mrcnn_mask_loss, mrcnn_parameter_loss = compute_losses(cosenfig, rpn_match, rpn_bbox, rpn_class_logits, rpn_pred_bbox, target_class_ids, mrcnn_class_logits, target_deltas, mrcnn_bbox, target_mask, mrcnn_mask, target_parameters, mrcnn_parameters)
 
                 losses += [rpn_class_loss + rpn_bbox_loss + mrcnn_class_loss + mrcnn_bbox_loss + mrcnn_mask_loss + mrcnn_parameter_loss]
 
@@ -292,41 +292,42 @@ def train(options):
                 pass
 
             ## The warping loss
-            for c in range(1, 2):
-                if 'warping' not in options.suffix:
-                    break
+            # for c in range(1, 2):
+            #     if 'warping' not in options.suffix:
+            #         break
+            #
+            #     detection_dict = detection_pair[1 - c]
+            #     neighbor_info = torch.cat([detection_dict['XYZ'], detection_dict['mask'], input_pair[1 - c]['image'][0]], dim=0).unsqueeze(0)
+            #     warped_info, valid_mask = warpModuleDepth(config, camera, input_pair[c]['depth'][0], neighbor_info, input_pair[c]['extrinsics'][0], input_pair[1 - c]['extrinsics'][0], width=config.IMAGE_MAX_DIM, height=config.IMAGE_MIN_DIM)
+            #
+            #     XYZ = warped_info[:3].view((3, -1))
+            #     XYZ = torch.cat([XYZ, torch.ones((1, int(XYZ.shape[1]))).cuda()], dim=0)
+            #     transformed_XYZ = torch.matmul(input_pair[c]['extrinsics'][0], torch.matmul(input_pair[1 - c]['extrinsics'][0].inverse(), XYZ))
+            #     transformed_XYZ = transformed_XYZ[:3].view(detection_dict['XYZ'].shape)
+            #     warped_depth = transformed_XYZ[1:2]
+            #     warped_images = warped_info[4:7].unsqueeze(0)
+            #     warped_mask = warped_info[3]
+            #
+            #     with torch.no_grad():
+            #         valid_mask = valid_mask * (input_pair[c]['depth'] > 1e-4).float()
+            #         pass
+            #
+            #     warped_depth_loss = l1LossMask(warped_depth, input_pair[c]['depth'], valid_mask)
+            #     losses += [warped_depth_loss]
+            #
+            #     if 'warping1' in options.suffix or 'warping3' in options.suffix:
+            #         warped_mask_loss = l1LossMask(warped_mask, (input_pair[c]['segmentation'] >= 0).float(), valid_mask)
+            #         losses += [warped_mask_loss]
+            #         pass
+            #
+            #     if 'warping2' in options.suffix or 'warping3' in options.suffix:
+            #         warped_image_loss = l1NormLossMask(warped_images, input_pair[c]['image'], dim=1, valid_mask=valid_mask)
+            #         losses += [warped_image_loss]
+            #         pass
+            #
+            #     input_pair[c]['warped_depth'] = (warped_depth * valid_mask + (1 - valid_mask) * 10).squeeze()
+            #     continue
 
-                detection_dict = detection_pair[1 - c]
-                neighbor_info = torch.cat([detection_dict['XYZ'], detection_dict['mask'], input_pair[1 - c]['image'][0]], dim=0).unsqueeze(0)
-                warped_info, valid_mask = warpModuleDepth(config, camera, input_pair[c]['depth'][0], neighbor_info, input_pair[c]['extrinsics'][0], input_pair[1 - c]['extrinsics'][0], width=config.IMAGE_MAX_DIM, height=config.IMAGE_MIN_DIM)
-
-                XYZ = warped_info[:3].view((3, -1))
-                XYZ = torch.cat([XYZ, torch.ones((1, int(XYZ.shape[1]))).cuda()], dim=0)
-                transformed_XYZ = torch.matmul(input_pair[c]['extrinsics'][0], torch.matmul(input_pair[1 - c]['extrinsics'][0].inverse(), XYZ))
-                transformed_XYZ = transformed_XYZ[:3].view(detection_dict['XYZ'].shape)
-                warped_depth = transformed_XYZ[1:2]
-                warped_images = warped_info[4:7].unsqueeze(0)
-                warped_mask = warped_info[3]
-
-                with torch.no_grad():
-                    valid_mask = valid_mask * (input_pair[c]['depth'] > 1e-4).float()
-                    pass
-
-                warped_depth_loss = l1LossMask(warped_depth, input_pair[c]['depth'], valid_mask)
-                losses += [warped_depth_loss]
-
-                if 'warping1' in options.suffix or 'warping3' in options.suffix:
-                    warped_mask_loss = l1LossMask(warped_mask, (input_pair[c]['segmentation'] >= 0).float(), valid_mask)
-                    losses += [warped_mask_loss]
-                    pass
-
-                if 'warping2' in options.suffix or 'warping3' in options.suffix:
-                    warped_image_loss = l1NormLossMask(warped_images, input_pair[c]['image'], dim=1, valid_mask=valid_mask)
-                    losses += [warped_image_loss]
-                    pass
-
-                input_pair[c]['warped_depth'] = (warped_depth * valid_mask + (1 - valid_mask) * 10).squeeze()
-                continue
             loss = sum(losses)
             losses = [l.data.item() for l in losses]
 
