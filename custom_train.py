@@ -76,7 +76,7 @@ def train(options):
     #         imgsz_max //= 0.667
     #     grid_min, grid_max = imgsz_min // gs, imgsz_max // gs
     #     imgsz_min, imgsz_max = grid_min * gs, grid_max * gs
-    # img_size = imgsz_max  # initialize with max size
+    img_size = imgsz_max  # initialize with max size
 
     init_seeds(seed=30)
 
@@ -154,7 +154,7 @@ def train(options):
     model.decoder2.load_state_dict(yolo_extract, strict=False)
 
     if chkpt['optimizer'] is not None:
-        optimizer.load_state_dict(chkpt['optimizer'])
+        # optimizer.load_state_dict(chkpt['optimizer'])
         best_fitness = chkpt['best_fitness']
 
     # # load results
@@ -198,7 +198,7 @@ def train(options):
     model.nc = nc  # attach number of classes to model
     model.hyp = hyp  # attach hyperparameters to model
     model.gr = 1.0  # giou loss ratio (obj_loss = 1.0 or giou)
-    model.class_weights = labels_to_class_weights(dataset.labels, nc).to(device)  # attach class weights
+    model.class_weights = labels_to_class_weights(dataset.labels, nc).cuda()  # attach class weights
 
     # Model EMA
     ema = torch_utils.ModelEMA(model)
@@ -215,8 +215,40 @@ def train(options):
     print('Using %g dataloader workers' % nw)
     print('Starting training for %g epochs...' % epochs)
 
-    # for epoch in range(start_epoch, epochs):
+    for epoch in range(start_epoch, epochs):
+        model.train()
 
+        mloss = torch.zeros(4).to(device)  # mean losses
+        print(('\n' + '%10s' * 8) % ('Epoch', 'gpu_mem', 'GIoU', 'obj', 'cls', 'total', 'targets', 'img_size'))
+        pbar = tqdm(enumerate(dataloader), total=nb)  # progress bar
+        for i, (imgs, targets, paths, shapes, planedata) in pbar:
+            ni = i + nb * epoch  # number integrated batches (since train start)
+            imgs = imgs.cuda().float() / 255.0  # uint8 to float32, 0 - 255 to 0.0 - 1.0
+            targets = targets.cuda()
+
+            # Burn-in
+            if ni <= n_burn * 2:
+                model.gr = np.interp(ni, [0, n_burn * 2], [0.0, 1.0])  # giou loss ratio (obj_loss = 1.0 or giou)
+                if ni == n_burn:  # burnin complete
+                    print_model_biases(model)
+
+                for j, x in enumerate(optimizer.param_groups):
+                    # bias lr falls from 0.1 to lr0, all other lrs rise from 0.0 to lr0
+                    x['lr'] = np.interp(ni, [0, n_burn], [0.1 if j == 2 else 0.0, x['initial_lr'] * lf(epoch)])
+                    if 'momentum' in x:
+                        x['momentum'] = np.interp(ni, [0, n_burn], [0.9, hyp['momentum']])
+
+            # # Multi-Scale training
+            # if opt.multi_scale:
+            #     if ni / accumulate % 1 == 0:  #  adjust img_size (67% - 150%) every 1 batch
+            #         img_size = random.randrange(grid_min, grid_max + 1) * gs
+            #     sf = img_size / max(imgs.shape[2:])  # scale factor
+            #     if sf != 1:
+            #         ns = [math.ceil(x * sf / gs) * gs for x in imgs.shape[2:]]  # new shape (stretched to 32-multiple)
+            #         imgs = F.interpolate(imgs, size=ns, mode='bilinear', align_corners=False)
+
+            # Run model
+            pred = model(imgs, planedata)
 
 if __name__ == '__main__':
     args = parse_args()
