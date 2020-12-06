@@ -24,6 +24,7 @@ from config import PlaneConfig
 from plane_utils import *
 from midas_utils import ssim
 from options import parse_args
+import torch.nn.functional as F
 
 from models.yolo_models import *
 from yolo_utils.datasets import *
@@ -237,7 +238,7 @@ def train(options):
         model.train()
 
         mloss = torch.zeros(4).cuda()  # mean losses
-        print(('\n' + '%10s' * 10) % ('Epoch', 'gpu_mem', 'GIoU', 'obj', 'cls', 'total', 'targets', 'img_size', 'depth_loss', 'plane_loss'))
+        print(('\n' + '%12s' * 10) % ('Epoch', 'gpu_mem', 'GIoU', 'obj', 'cls', 'yolo_loss', 'targets', 'img_size', 'depth_loss', 'plane_loss'))
         pbar = tqdm(enumerate(dataloader), total=nb)  # progress bar
         for i, (imgs, targets, paths, shapes, planedata) in pbar:
             ni = i + nb * epoch  # number integrated batches (since train start)
@@ -285,11 +286,11 @@ def train(options):
                 plane_losses += [rpn_class_loss + rpn_bbox_loss + mrcnn_class_loss + mrcnn_bbox_loss + mrcnn_mask_loss + mrcnn_parameter_loss]
 
                 ### Midas losses
-                depth_norm = 1000. / gt_depth
-                l_depth = l1_criterion(midas_out[batch_idx], depth_norm)
-                l_ssim = torch.clamp((1 - ssim(midas_out[batch_idx].unsqueeze(0).unsqueeze(0), depth_norm.unsqueeze(0).unsqueeze(0), val_range = 1000.0 / 10.0)) * 0.5, 0, 1)
-                d_loss = (1.0 * l_ssim) + (0.1 * l_depth)
-                depth_losses.append(d_loss)
+                l_depth = l1_criterion(midas_out[batch_idx], gt_depth)
+                # l_ssim = torch.clamp((1 - ssim(midas_out[batch_idx].unsqueeze(0).unsqueeze(0), gt_depth.unsqueeze(0).unsqueeze(0), val_range = 1000.0 / 10.0)) * 0.5, 0, 1)
+                l_mse = F.mse_loss(midas_out[batch_idx], gt_depth)
+                d_loss = (1.0 * l_mse) + (0.1 * l_depth)
+                depth_losses +=[d_loss]
 
                 gt_depth = gt_depth.unsqueeze(0)
                 depth_np_loss = l1LossMask(depth_np_pred[:, 80:560], gt_depth[:, 80:560], (gt_depth[:, 80:560] > 1e-4).float())
@@ -298,17 +299,14 @@ def train(options):
 
             plane_batch_loss = sum(plane_losses)
             depth_batch_loss = sum(depth_losses)
-
             ### Yolo loss
             yolo_loss, loss_items = compute_loss(yolo_out, targets, model.decoder2)
-
             # if not torch.isfinite(yolo_loss):
             #     print('WARNING: non-finite loss, ending training ', loss_items)
             #     return results
 
             # Scale loss by nominal batch_size of 64
             yolo_loss *= batch_size / 64
-
             total_loss = depth_batch_loss + yolo_loss + plane_batch_loss
             # Compute gradient
             total_loss.backward()
@@ -322,7 +320,7 @@ def train(options):
             # Print batch results
             mloss = (mloss * i + loss_items) / (i + 1)  # update mean losses
             mem = '%.3gG' % (torch.cuda.memory_reserved() / 1E9 if torch.cuda.is_available() else 0)  # (GB)
-            s = ('%10s' * 2 + '%10.3g' * 8) % ('%g/%g' % (epoch+1, epochs), mem, *mloss, len(targets), img_size, depth_batch_loss, plane_batch_loss)
+            s = ('%12s' * 2 + '%12.3g' * 8) % ('%g/%g' % (epoch+1, epochs), mem, *mloss, len(targets), img_size, depth_batch_loss, plane_batch_loss)
             pbar.set_description(s)
 
             # Plot images with bounding boxes
