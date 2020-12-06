@@ -143,6 +143,13 @@ def train(options):
     # last = wdir + 'last.pt'
     # best = wdir + 'best.pt'
 
+    midas_state_dict = torch.hub.load_state_dict_from_url(
+          "https://github.com/intel-isl/MiDaS/releases/download/v2/model-f46da743.pt", progress=True, check_hash=True
+      )
+
+    self.encoder.load_state_dict(midas_state_dict, strict=False)
+    self.decoder1.load_state_dict(midas_state_dict, strict=False)
+
     chkpt = torch.load('weights/last2.pt')
     yolo_extract = dict()
     for k, v in chkpt['model'].items():
@@ -152,6 +159,14 @@ def train(options):
         yolo_extract['.'.join(module_key)] = v
 
     model.decoder2.load_state_dict(yolo_extract, strict=False)
+
+    rcnn_state_dict = torch.load(options.checkpoint_dir + '/checkpoint.pth')
+    for key in list(rcnn_state_dict.keys()):
+        if key.startswith('fpn.C'):
+           del rcnn_state_dict[key]
+
+    self.decoder3.load_state_dict(rcnn_state_dict, strict = False)
+    self.decoder3.set_trainable(r"(fpn.P5\_.*)|(fpn.P4\_.*)|(fpn.P3\_.*)|(fpn.P2\_.*)|(rpn.*)|(classifier.*)|(mask.*)")
 
     if chkpt['optimizer'] is not None:
         # optimizer.load_state_dict(chkpt['optimizer'])
@@ -164,6 +179,9 @@ def train(options):
 
     del chkpt
     del yolo_extract
+    del midas_state_dict
+    del rcnn_state_dict
+
 
     # model_names = [name for name, param in model.named_parameters()]
     # for name, param in refine_model.named_parameters():
@@ -249,6 +267,7 @@ def train(options):
 
             # Run model
             pred = model(imgs, planedata)
+
 
 if __name__ == '__main__':
     args = parse_args()

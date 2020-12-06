@@ -4,13 +4,11 @@ import torch.nn as nn
 from .midas_blocks import FeatureFusionBlock, Interpolate, _make_encoder, _make_decoder
 
 class Encoder(nn.Module):
-    def __init__(self, state_dict):
+    def __init__(self):
         super(Encoder, self).__init__()
 
         self.use_pretrained = True
         self.pretrained = _make_encoder(self.use_pretrained)
-        self.parameters = state_dict
-        self.load_state_dict(self.parameters, strict=False)
 
     def forward(self, x):
 
@@ -22,7 +20,7 @@ class Encoder(nn.Module):
         return layer_1, layer_2, layer_3, layer_4
 
 class Decoder1(nn.Module):
-    def __init__(self, state_dict):
+    def __init__(self):
         super(Decoder1, self).__init__()
 
         self.scratch = _make_decoder(256)
@@ -39,10 +37,6 @@ class Decoder1(nn.Module):
             nn.Conv2d(32, 1, kernel_size=1, stride=1, padding=0),
             nn.ReLU(True),
         )
-
-        self.parameters = state_dict
-        self.load_state_dict(self.parameters, strict=False)
-
 
     def forward(self, x1, x2, x3, x4):
 

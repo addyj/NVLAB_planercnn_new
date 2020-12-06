@@ -126,7 +126,7 @@ class FPN(nn.Module):
         # x = self.C4(x)
         c4_out = midas_extract[2]
         # x = self.C5(x)
-        p5_out = self.P5_conv1(midas_extract[4])
+        p5_out = self.P5_conv1(midas_extract[3])
 
         if self.bilinear_upsampling:
             p4_out = self.P4_conv1(c4_out) + F.upsample(p5_out, scale_factor=2, mode='bilinear')
