@@ -22,6 +22,7 @@ from evaluate_utils import *
 from config import PlaneConfig
 
 from plane_utils import *
+from midas_utils import ssim
 from options import parse_args
 
 from models.yolo_models import *
@@ -131,15 +132,13 @@ def train(options):
     # refine_model.cuda()
     # refine_model.train()
 
-    # print(summary(model, input_size=(3, 416, 416)))
-
     # refine_model.load_state_dict(torch.load(options.checkpoint_dir + '/checkpoint_refine.pth'))
 
     start_epoch = 0
     best_fitness = 0.0
 
     # opt.weights = last if opt.resume else opt.weights
-    # wdir = 'weights' + os.sep  # yolo weights dir
+    wdir = 'weights' + os.sep  # yolo weights dir
     # last = wdir + 'last.pt'
     # best = wdir + 'best.pt'
 
@@ -213,9 +212,10 @@ def train(options):
     l1_criterion = nn.L1Loss()
 
     # Model parameters for YOLO
-    model.nc = nc  # attach number of classes to model
-    model.hyp = hyp  # attach hyperparameters to model
+    model.decoder2.nc = nc  # attach number of classes to model
+    model.decoder2.hyp = hyp  # attach hyperparameters to model
     model.gr = 1.0  # giou loss ratio (obj_loss = 1.0 or giou)
+    model.decoder2.gr = model.gr
     model.class_weights = labels_to_class_weights(dataset.labels, nc).cuda()  # attach class weights
 
     # Model EMA
@@ -237,7 +237,7 @@ def train(options):
         model.train()
 
         mloss = torch.zeros(4).cuda()  # mean losses
-        print(('\n' + '%10s' * 8) % ('Epoch', 'gpu_mem', 'GIoU', 'obj', 'cls', 'total', 'targets', 'img_size'))
+        print(('\n' + '%10s' * 10) % ('Epoch', 'gpu_mem', 'GIoU', 'obj', 'cls', 'total', 'targets', 'img_size', 'depth_loss', 'plane_loss'))
         pbar = tqdm(enumerate(dataloader), total=nb)  # progress bar
         for i, (imgs, targets, paths, shapes, planedata) in pbar:
             ni = i + nb * epoch  # number integrated batches (since train start)
@@ -247,6 +247,7 @@ def train(options):
             # Burn-in
             if ni <= n_burn * 2:
                 model.gr = np.interp(ni, [0, n_burn * 2], [0.0, 1.0])  # giou loss ratio (obj_loss = 1.0 or giou)
+                model.decoder2.gr = model.gr
                 if ni == n_burn:  # burnin complete
                     print_model_biases(model)
 
@@ -286,7 +287,7 @@ def train(options):
                 ### Midas losses
                 depth_norm = 1000. / gt_depth
                 l_depth = l1_criterion(midas_out[batch_idx], depth_norm)
-                l_ssim = torch.clamp((1 - ssim(midas_out[batch_idx], depth_norm, val_range = 1000.0 / 10.0)) * 0.5, 0, 1)
+                l_ssim = torch.clamp((1 - ssim(midas_out[batch_idx].unsqueeze(0).unsqueeze(0), depth_norm.unsqueeze(0).unsqueeze(0), val_range = 1000.0 / 10.0)) * 0.5, 0, 1)
                 d_loss = (1.0 * l_ssim) + (0.1 * l_depth)
                 depth_losses.append(d_loss)
 
@@ -299,7 +300,7 @@ def train(options):
             depth_batch_loss = sum(depth_losses)
 
             ### Yolo loss
-            yolo_loss, loss_items = compute_loss(yolo_out, targets, model)
+            yolo_loss, loss_items = compute_loss(yolo_out, targets, model.decoder2)
 
             # if not torch.isfinite(yolo_loss):
             #     print('WARNING: non-finite loss, ending training ', loss_items)
@@ -320,14 +321,14 @@ def train(options):
 
             # Print batch results
             mloss = (mloss * i + loss_items) / (i + 1)  # update mean losses
-            mem = '%.3gG' % (torch.cuda.memory_cached() / 1E9 if torch.cuda.is_available() else 0)  # (GB)
-            s = ('%10s' * 2 + '%10.3g' * 6) % ('%g/%g' % (epoch, epochs - 1), mem, *mloss, len(targets), img_size)
+            mem = '%.3gG' % (torch.cuda.memory_reserved() / 1E9 if torch.cuda.is_available() else 0)  # (GB)
+            s = ('%10s' * 2 + '%10.3g' * 8) % ('%g/%g' % (epoch+1, epochs), mem, *mloss, len(targets), img_size, depth_batch_loss, plane_batch_loss)
             pbar.set_description(s)
 
             # Plot images with bounding boxes
-            if ni < 1:
-                f = 'train_batch%g.png' % i  # filename
-                plot_images(imgs=imgs, targets=targets, paths=paths, fname=f)
+            # if ni < 1:
+            #     f = 'train_batch%g.png' % i  # filename
+            #     plot_images(imgs=imgs, targets=targets, paths=paths, fname=f)
                 # if tb_writer:
                 #     tb_writer.add_image(f, cv2.imread(f)[:, :, ::-1], dataformats='HWC')
                     # tb_writer.add_graph(model, imgs)  # add model to tensorboard
@@ -337,6 +338,59 @@ def train(options):
         # Update scheduler
         scheduler.step()
 
+        # # Process epoch results
+        ema.update_attr(model)
+        final_epoch = epoch + 1 == epochs
+        # if not opt.notest or final_epoch:  # Calculate mAP
+        #     is_coco = any([x in data for x in ['coco.data', 'coco2014.data', 'coco2017.data']]) and model.nc == 80
+        #     results, maps = test.test(cfg,
+        #                               data,
+        #                               batch_size=batch_size,
+        #                               img_size=imgsz_test,
+        #                               model=ema.ema,
+        #                               save_json=final_epoch and is_coco,
+        #                               single_cls=opt.single_cls,
+        #                               dataloader=testloader)
+        #
+        # # Write epoch results
+        # with open(results_file, 'a') as f:
+        #     f.write(s + '%10.3g' * 7 % results + '\n')  # P, R, mAP, F1, test_losses=(GIoU, obj, cls)
+
+        # # Update best mAP
+        # fi = fitness(np.array(results).reshape(1, -1))  # fitness_i = weighted combination of [P, R, mAP, F1]
+        # if fi > best_fitness:
+        #     best_fitness = fi
+
+        # Save training results
+        save = (not options.nosave) or (final_epoch)
+        if save:
+            # with open(results_file, 'r') as f:
+            #     # Create checkpoint
+            #     _chkpt = {'epoch': epoch,
+            #              'best_fitness': best_fitness,
+            #              'training_results': f.read(),
+            #              'model': ema.ema.module.state_dict() if hasattr(model, 'module') else ema.ema.state_dict(),
+            #              'optimizer': None if final_epoch else optimizer.state_dict()}
+
+            # Save last checkpoint
+            torch.save(model.state_dict(), wdir + 'last_wt.pt')
+
+            # Save best checkpoint
+            # if (best_fitness == fi) and not final_epoch:
+            #     torch.save(_chkpt, best)
+
+            # Save backup every 10 epochs (optional)
+            # if epoch > 0 and epoch % 10 == 0:
+            #     torch.save(_chkpt, wdir + 'backup%g.pt' % epoch)
+
+            # Delete checkpoint
+            del _chkpt
+
+        # end epoch ----------------------------------------------------------------------------------------------------
+
+    plot_results()
+    print('%g epochs completed in %.3f hours.\n' % (epoch - start_epoch + 1, (time.time() - t0) / 3600))
+    torch.cuda.empty_cache()
 
 if __name__ == '__main__':
     args = parse_args()
@@ -359,12 +413,12 @@ if __name__ == '__main__':
 
     os.system('rm ' + args.test_dir + '/*.png')
 
-    try:
-        # Start Tensorboard with "tensorboard --logdir=runs", view at http://localhost:6006/
-        from torch.utils.tensorboard import SummaryWriter
-        tb_writer = SummaryWriter()
-        print("Run 'tensorboard --logdir=runs' to view tensorboard at http://localhost:6006/")
-    except:
-        pass
+    # try:
+    #     # Start Tensorboard with "tensorboard --logdir=runs", view at http://localhost:6006/
+    #     from torch.utils.tensorboard import SummaryWriter
+    #     tb_writer = SummaryWriter()
+    #     print("Run 'tensorboard --logdir=runs' to view tensorboard at http://localhost:6006/")
+    # except:
+    #     pass
 
     train(args)

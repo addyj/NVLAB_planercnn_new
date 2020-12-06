@@ -52,9 +52,9 @@ class POD_Model(nn.Module):
                                 )
 
         self.decoder2 = Decoder2(self.yolo_config)
-
-        self.decoder3 = Decoder3(self.rcnn_config)
         
+        self.decoder3 = Decoder3(self.rcnn_config)
+
     def forward(self, x, plane_data):
         c1, c2, c3, c4 = self.encoder(x)
         #384 torch.Size([2, 256, 96, 96]) torch.Size([2, 512, 48, 48]) torch.Size([2, 1024, 24, 24]) torch.Size([2, 2048, 12, 12])
