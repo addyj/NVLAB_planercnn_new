@@ -3,8 +3,10 @@
 
 A deep neural architecture, which combines PlaneR-CNN, YOLOv3 and Midas architecture to detects arbitrary number of planes, depth and bounding boxes for a image.
 
-For train log [Colab Train](https://colab.research.google.com/drive/1dzrYak3wLTHlpLf_I1viiH7EtTpwSj2E?usp=sharing)
-Repositories referred and merged [PlaneRCNN](https://github.com/NVlabs/planercnn), [YoloV3](https://github.com/theschoolofai/YoloV3) and [MiDas](https://github.com/intel-isl/MiDaS)
+For train log [Colab Train](https://colab.research.google.com/drive/1dzrYak3wLTHlpLf_I1viiH7EtTpwSj2E?usp=sharing).
+
+Repositories referred and merged [PlaneRCNN](https://github.com/NVlabs/planercnn), [YoloV3](https://github.com/theschoolofai/YoloV3) and [MiDas](https://github.com/intel-isl/MiDaS).
+
 The code is implemented using PyTorch.
 
 ## Getting Started 
@@ -28,6 +30,41 @@ Once you have a saved pretrained weight file for this model you can comment out 
 
 Load custom data into **data/** folder. Refer YOLOv3 dataset structure construction. Refer the custom data set for reference [Trident Data Full](https://drive.google.com/file/d/1Oia4b6dNvxs9TbFCs8_60VS2iWxcHgeW/view?usp=sharing) and [Trident Data](https://drive.google.com/file/d/1orpEeyaq9LExJ_MyH7XCAQyxTcTxzTpJ/view?usp=sharing) . Also follow the extension according to the custom dataset.
 
+Segmentation image for training were created using the plane masks inferred from the original NVlabs plane repo. [Removed Scannet Dataset dependency altogether]
+
+Dataset structure:
+```
+data
+  --customdata
+    --images/
+      --img001.jpg
+      --img002.jpg
+      --...
+    --labels/
+      --img001.txt
+      --img002.txt
+      --...
+    --depth/
+      --img001.npz
+      --img002.npz
+      --...
+    --segmentation_masks/
+      --img001.npz
+      --img002.npz
+      --...
+    --planes/
+      --img001.npy
+      --img002.npy
+      --...
+    custom.data #data file
+    custom.names #your class names
+    train.txt #train paths
+    test.txt #test paths
+    train.shapes #train shapes
+    test.shapes #test shapes
+    camera.txt #camera intrinsics
+```
+
 ## Model
 
 ### MiDAS
@@ -47,10 +84,32 @@ Same as Yolo the Midas Encoder outs from ResNext101 were feeded to PlaneRCNN Fea
 Note: Should add some intermidiate layers for proper merging.
 
 ## Training
+Due to memory restrictions cant go more than batch size of 5. 
+
+MiDAS model is freezed, but for training loss calculation RMSE Loss and L1Loss combination is used.
+
+The loss function used for YoloV3 is the same as what is used in vanilla YoloV3.
+
+The loss function used for PlaneRCNN is the same as what is used in vanilla PlaneRCNN. The refinement part of the training was removed, as it was just reaffirming theplane prediction.
+PlaneRCNN  cannot be trained with a batch size of more than 1 so refactored the code to run on batch in loop and calculate the loss accordingly.
+
+The total loss was taken as  sum of all the three individual losses.
+
 ### Training script
+
 ```bash
 python custom_train.py --cfg cfg/yolov3-custom.cfg --dataset=custom --data data/customdata/custom.data --batchSize=4 --numEpochs 3
 ```
 options:
 Refer [options.py](https://github.com/addyj/Trident_Detection/blob/master/options.py)
+
+TODO:
+
+1. Validation Code Integration
+2. Result Plotting and Saving.
+3. Add Intermediate layers for connecting encoder n decoder
+4. Add back the refinement PRCNN model. 
+5. Refactoring to run on different sizes.
+4. More Training and better Loss function identification.
+5. Unfreeze, load, and train more.
 
