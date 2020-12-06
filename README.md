@@ -46,71 +46,11 @@ As MiDAS Encoder's - ResNext101 and  YoloV3's - DarkNet are different, added add
 Same as Yolo the Midas Encoder outs from ResNext101 were feeded to PlaneRCNN Feature Pyramid Network (FPN) and no intermidiate layers were added as the dimension matched to the PlaneRCNN Resnet101. 
 Note: Should add some intermidiate layers for proper merging.
 
-
 ## Training
-### Training data preparation
-Please first download the ScanNet dataset (v2), unzip it to "$ROOT_FOLDER/scans/", and extract image frames from the *.sens* file using the official [reader](https://github.com/ScanNet/ScanNet/blob/master/SensReader/python/reader.py).
-
-Then download our plane annotation from [here](https://www.dropbox.com/s/u2wl4ji700u4shq/ScanNet_planes.zip?dl=0), and merge the "scans/" folder with "$ROOT_FOLDER/scans/". (If you prefer other locations, please change the paths in *datasets/scannet_scene.py*.)
-
-After the above steps, ground truth plane annotations are stored under "$ROOT_FOLDER/scans/scene*/annotation/". Among the annotations, *planes.npy* stores the plane parameters which are represented in the global frame. Plane segmentation for each image view is stored under *segmentation/*.
-
-To generate such training data on your own, please refer to *data_prep/parse.py*. Please refer to the README under *data_prep/* for compilation.
-
-Besides scene-specific annotation under each scene folder, please download global metadata from [here](https://www.dropbox.com/s/v7qb7hwas1j766r/metadata.zip?dl=0), and unzip it to "$ROOT_FOLDER". Metadata includes the normal anchors (anchor_planes_N.npy) and invalid image indices caused by tracking issues (invalid_indices_*.txt). 
-
-### Training with custom data
-To train on custom data, you need a list of planes, where each plane is represented using three parameters (as explained above) and a 2D binary mask. In our implementation, we use one 2D segmentation map where pixels with value *i* belong to the *i*th plane in the list. The easiest way is to replace the ScanNetScene class with something interacts with your custom data. Note that, the plane_info, which stores some semantic information and global plane index in the scene, is not used in this project. The code is misleading as global plane indices are read from plane_info [here](https://github.com/NVlabs/planercnn/blob/01e03fe5a97b7afc4c5c4c3090ddc9da41c071bd/datasets/plane_stereo_dataset.py#L194), but they are used only for debugging purposes.
-
 ### Training script
 ```bash
-python train_planercnn.py --restore=2 --suffix=warping_refine
+python custom_train.py --cfg cfg/yolov3-custom.cfg --dataset=custom --data data/customdata/custom.data --batchSize=4 --numEpochs 3
 ```
 options:
-```bash
---restore:
-- 0: training from scratch (not tested)
-- 1 (default): resume training from saved checkpoint
-- 2: training from pre-trained mask-rcnn model
-
---suffix (the below arguments can be concatenated):
-- '': training the basic version
-- 'warping': with the warping loss
-- 'refine': with the refinement network
-- 'refine_only': train only the refinement work
-- 'warping_refine_after': add the warping loss after the refinement network instead of appending both independently
-
---anchorType:
-- 'normal' (default): regress normal using 7 anchors
-- 'normal[k]' (e.g., normal5): regress normal using k anchors, normal0 will regress normal directly without anchors
-- 'joint': regress final plane parameters directly instead of predicting normals and depthmap separately
-```
-
-Temporary results are written under *test/* for debugging purposes.
-
-## Evaluation
-To evaluate the performance against existing methods, please run:
-```bash
-python evaluate.py --methods=f --suffix=warping_refine
-```
-Options:
-```bash
---methods:
-- f: evaluate PlaneRCNN (use --suffix and --anchorType to specify configuration as explained above)
-- p: evaluate PlaneNet
-- e: evaluate PlaneRecover
-- t: evaluate MWS (--suffix=gt for MWS-G)
-```
-Statistics are printed in terminal and saved in *logs/global.txt* for later analysis.
-
-Note that [PlaneNet](https://github.com/art-programmer/PlaneNet/blob/master/LICENSE) and [PlaneRecover](https://github.com/fuy34/planerecover/blob/master/LICENSE) are under the MIT license.
-
-To evaluate on the NYU Depth dataset, please first download the labeled dataset from the official [website](https://cs.nyu.edu/~silberman/datasets/nyu_depth_v2.html), and the official train/test split from [here](http://horatio.cs.nyu.edu/mit/silberman/indoor_seg_sup/splits.mat). Put them under the same folder "$NYU_FOLDER". To evaluate, please run,
-```bash
-python evaluate.py --methods=f --suffix=warping_refine --dataset=nyu --dataFolder="$NYU_FOLDER"
-```
-
-Note that the numbers are off with the provided model. We retrained the model after cleaning up the code, which is different from the model we tested for the publication.
-
-
+Refer [options.py](https://github.com/addyj/Trident_Detection/blob/master/options.py)
 
