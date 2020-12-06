@@ -147,8 +147,8 @@ def train(options):
           "https://github.com/intel-isl/MiDaS/releases/download/v2/model-f46da743.pt", progress=True, check_hash=True
       )
 
-    self.encoder.load_state_dict(midas_state_dict, strict=False)
-    self.decoder1.load_state_dict(midas_state_dict, strict=False)
+    model.encoder.load_state_dict(midas_state_dict, strict=False)
+    model.decoder1.load_state_dict(midas_state_dict, strict=False)
 
     chkpt = torch.load('weights/last2.pt')
     yolo_extract = dict()
@@ -165,8 +165,8 @@ def train(options):
         if key.startswith('fpn.C'):
            del rcnn_state_dict[key]
 
-    self.decoder3.load_state_dict(rcnn_state_dict, strict = False)
-    self.decoder3.set_trainable(r"(fpn.P5\_.*)|(fpn.P4\_.*)|(fpn.P3\_.*)|(fpn.P2\_.*)|(rpn.*)|(classifier.*)|(mask.*)")
+    model.decoder3.load_state_dict(rcnn_state_dict, strict = False)
+    model.decoder3.set_trainable(r"(fpn.P5\_.*)|(fpn.P4\_.*)|(fpn.P3\_.*)|(fpn.P2\_.*)|(rpn.*)|(classifier.*)|(mask.*)")
 
     if chkpt['optimizer'] is not None:
         # optimizer.load_state_dict(chkpt['optimizer'])
@@ -266,13 +266,82 @@ def train(options):
             #         imgs = F.interpolate(imgs, size=ns, mode='bilinear', align_corners=False)
 
             # Run model
-            pred = model(imgs, planedata)
+            midas_out, yolo_out, plane_out = model(imgs, planedata)
+
+            plane_losses = []
+            depth_losses = []
+            for batch_idx in range(batch_size):
+
+                rpn_match = planedata[batch_idx][2].cuda()
+                rpn_bbox = planedata[batch_idx][3].cuda()
+                gt_depth = torch.from_numpy(planedata[batch_idx][8]).cuda()
+
+                rpn_class_logits, rpn_pred_bbox, target_class_ids, mrcnn_class_logits, target_deltas, mrcnn_bbox, target_mask, mrcnn_mask, target_parameters, mrcnn_parameters, detections, detection_masks, detection_gt_parameters, detection_gt_masks, rpn_rois, roi_features, roi_indices, feature_map, depth_np_pred = plane_out[batch_idx]
+
+                ## Plane losses
+                rpn_class_loss, rpn_bbox_loss, mrcnn_class_loss, mrcnn_bbox_loss, mrcnn_mask_loss, mrcnn_parameter_loss = compute_losses(rcnn_config, rpn_match.unsqueeze(0), rpn_bbox.unsqueeze(0), rpn_class_logits, rpn_pred_bbox, target_class_ids, mrcnn_class_logits, target_deltas, mrcnn_bbox, target_mask, mrcnn_mask, target_parameters, mrcnn_parameters)
+
+                plane_losses += [rpn_class_loss + rpn_bbox_loss + mrcnn_class_loss + mrcnn_bbox_loss + mrcnn_mask_loss + mrcnn_parameter_loss]
+
+                ### Midas losses
+                depth_norm = 1000. / gt_depth
+                l_depth = l1_criterion(midas_out[batch_idx], depth_norm)
+                l_ssim = torch.clamp((1 - ssim(midas_out[batch_idx], depth_norm, val_range = 1000.0 / 10.0)) * 0.5, 0, 1)
+                d_loss = (1.0 * l_ssim) + (0.1 * l_depth)
+                depth_losses.append(d_loss)
+
+                gt_depth = gt_depth.unsqueeze(0)
+                depth_np_loss = l1LossMask(depth_np_pred[:, 80:560], gt_depth[:, 80:560], (gt_depth[:, 80:560] > 1e-4).float())
+                plane_losses.append(depth_np_loss)
+                normal_np_pred = None
+
+            plane_batch_loss = sum(plane_losses)
+            depth_batch_loss = sum(depth_losses)
+
+            ### Yolo loss
+            yolo_loss, loss_items = compute_loss(yolo_out, targets, model)
+
+            # if not torch.isfinite(yolo_loss):
+            #     print('WARNING: non-finite loss, ending training ', loss_items)
+            #     return results
+
+            # Scale loss by nominal batch_size of 64
+            yolo_loss *= batch_size / 64
+
+            total_loss = depth_batch_loss + yolo_loss + plane_batch_loss
+            # Compute gradient
+            total_loss.backward()
+
+            # Optimize accumulated gradient
+            if ni % accumulate == 0:
+                optimizer.step()
+                optimizer.zero_grad()
+                ema.update(model)
+
+            # Print batch results
+            mloss = (mloss * i + loss_items) / (i + 1)  # update mean losses
+            mem = '%.3gG' % (torch.cuda.memory_cached() / 1E9 if torch.cuda.is_available() else 0)  # (GB)
+            s = ('%10s' * 2 + '%10.3g' * 6) % ('%g/%g' % (epoch, epochs - 1), mem, *mloss, len(targets), img_size)
+            pbar.set_description(s)
+
+            # Plot images with bounding boxes
+            if ni < 1:
+                f = 'train_batch%g.png' % i  # filename
+                plot_images(imgs=imgs, targets=targets, paths=paths, fname=f)
+                # if tb_writer:
+                #     tb_writer.add_image(f, cv2.imread(f)[:, :, ::-1], dataformats='HWC')
+                    # tb_writer.add_graph(model, imgs)  # add model to tensorboard
+
+            # end batch ------------------------------------------------------------------------------------------------
+
+        # Update scheduler
+        scheduler.step()
 
 
 if __name__ == '__main__':
     args = parse_args()
 
-    args.keyname = 'planercnn'
+    args.keyname = 'trident'
 
     args.keyname += '_' + args.anchorType
     if args.dataset != '':
