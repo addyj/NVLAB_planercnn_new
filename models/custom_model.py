@@ -66,19 +66,30 @@ class POD_Model(nn.Module):
         self.decoder3.load_state_dict(self.rcnn_state_dict, strict = False)
         self.decoder3.set_trainable(r"(fpn.P5\_.*)|(fpn.P4\_.*)|(fpn.P3\_.*)|(fpn.P2\_.*)|(rpn.*)|(classifier.*)|(mask.*)")
 
-    def forward(self, x):
+    def forward(self, x, plane_data):
         c1, c2, c3, c4 = self.encoder(x)
         #384 torch.Size([2, 256, 96, 96]) torch.Size([2, 512, 48, 48]) torch.Size([2, 1024, 24, 24]) torch.Size([2, 2048, 12, 12])
         #(skip and concat n send to yolo)
         #416 torch.Size([2, 256, 104, 104]) torch.Size([2, 512, 52, 52]) torch.Size([2, 1024, 26, 26]) torch.Size([2, 2048, 13, 13])
+        #640 size for planercnn compatibility
         midas_output = self.decoder1(c1, c2, c3, c4)
         m_y_c3 = self.m_y_merge1(c3)
         m_y_c2 = self.m_y_merge2(c2)
         m_y_c4 = self.m_y_merge3(c4)
         yolo_output = self.decoder2(m_y_c4, m_y_c2, m_y_c3)
 
+        plane_output = []
 
-        return midas_output, yolo_output
+        for pl_pred_idx in range(self.options.batchSize):
+
+            camera = plane_data[pl_pred_idx][14].cuda()
+
+            encoder_ext, image_metas, rpn_match, rpn_bbox, gt_class_ids, gt_boxes, gt_masks, gt_parameters, gt_depth, extrinsics, gt_plane, gt_segmentation, plane_indices = [c1[pl_pred_idx].unsqueeze(0), c2[pl_pred_idx].unsqueeze(0), c3[pl_pred_idx].unsqueeze(0), c4[pl_pred_idx].unsqueeze(0)], plane_data[pl_pred_idx][1].numpy(), plane_data[pl_pred_idx][2].cuda(), plane_data[pl_pred_idx][3].cuda(), plane_data[pl_pred_idx][4].cuda(), plane_data[pl_pred_idx][5].cuda(), plane_data[pl_pred_idx][6].cuda(), plane_data[pl_pred_idx][7].cuda(), plane_data[pl_pred_idx][8].cuda(), plane_data[pl_pred_idx][9].cuda(), plane_data[pl_pred_idx][10].cuda(), plane_data[pl_pred_idx][11].cuda(), plane_data[pl_pred_idx][12].cuda()
+
+            plane_predict = self.decoder3.predict([encoder_ext, np.expand_dims(image_metas, axis=0), gt_class_ids.unsqueeze(0), gt_boxes.unsqueeze(0), gt_masks.unsqueeze(0), gt_parameters.unsqueeze(0), camera.unsqueeze(0)], mode='training_detection', use_nms=2, use_refinement=False, return_feature_map=True)
+            plane_output.append(plane_predict)
+
+        return midas_output, yolo_output, plane_output
 
     # def set_log_dir(self, model_path=None):
     #     """Sets the model log directory and epoch counter.

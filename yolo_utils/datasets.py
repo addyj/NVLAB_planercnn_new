@@ -308,16 +308,16 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         self.extrinsics = np.eye(4, dtype=np.float32)
 
         # Define labels
-        self.label_files = [x.replace('images', 'labels').replace(os.path.splitext(x)[-1], '.txt')
+        self.label_files = [x.replace('images/', 'labels/').replace(os.path.splitext(x)[-1], '.txt')
                             for x in self.img_files]
 
-        self.depth_files = [x.replace('images', 'depth').replace(os.path.splitext(x)[-1], '.npz').replace(os.path.splitext(x)[-1], '.npz')
+        self.depth_files = [x.replace('images/', 'depth/').replace(os.path.splitext(x)[-1], '.npz').replace(os.path.splitext(x)[-1], '.npz')
                             for x in self.img_files]
 
-        self.mask_files = [x.replace('images', 'segmentation_masks').replace(os.path.splitext(x)[-1], '.npz').replace(os.path.splitext(x)[-1], '.npz')
+        self.mask_files = [x.replace('images/', 'segmentation_masks/').replace(os.path.splitext(x)[-1], '.npz').replace(os.path.splitext(x)[-1], '.npz')
                             for x in self.img_files]
 
-        self.plane_files = [x.replace('images', 'planes').replace(os.path.splitext(x)[-1], '.npy').replace(os.path.splitext(x)[-1], '.npy')
+        self.plane_files = [x.replace('images/', 'planes/').replace(os.path.splitext(x)[-1], '.npy').replace(os.path.splitext(x)[-1], '.npy')
                             for x in self.img_files]
 
         # Rectangular Training  https://github.com/ultralytics/yolov3/issues/232
@@ -648,7 +648,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         img, label, path, shapes, plane_data = zip(*batch)  # transposed
         for i, l in enumerate(label):
             l[:, 0] = i  # add target image index for build_targets()
-        return torch.stack(img, 0), torch.cat(label, 0), path, shapes, torch.stack(plane_data, 0)
+        return torch.stack(img, 0), torch.cat(label, 0), path, shapes, plane_data
 
 ## PlaneRCNN
 def load_image_gt(config, image_id, image, depth, mask, class_ids, parameters, augment=False, use_mini_mask=True):

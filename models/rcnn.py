@@ -1600,9 +1600,6 @@ class Decoder3(nn.Module):
             })
         return results
 
-    # def predict_batch(self, input):
-
-
     def predict(self, input, mode, use_nms=1, use_refinement=False, return_feature_map=False):
         molded_images = input[0]
         image_metas = input[1]

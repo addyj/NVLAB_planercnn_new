@@ -218,7 +218,7 @@ def train(options):
     for epoch in range(start_epoch, epochs):
         model.train()
 
-        mloss = torch.zeros(4).to(device)  # mean losses
+        mloss = torch.zeros(4).cuda()  # mean losses
         print(('\n' + '%10s' * 8) % ('Epoch', 'gpu_mem', 'GIoU', 'obj', 'cls', 'total', 'targets', 'img_size'))
         pbar = tqdm(enumerate(dataloader), total=nb)  # progress bar
         for i, (imgs, targets, paths, shapes, planedata) in pbar:
