@@ -52,7 +52,7 @@ class POD_Model(nn.Module):
                                 )
 
         self.decoder2 = Decoder2(self.yolo_config)
-        
+
         self.decoder3 = Decoder3(self.rcnn_config)
 
     def forward(self, x, plane_data):
@@ -68,7 +68,7 @@ class POD_Model(nn.Module):
         yolo_output = self.decoder2(m_y_c4, m_y_c2, m_y_c3)
 
         plane_output = []
-        for pl_pred_idx in range(self.options.batchSize):
+        for pl_pred_idx in range(len(plane_data)):
 
             camera = torch.from_numpy(plane_data[pl_pred_idx][14]).cuda()
 

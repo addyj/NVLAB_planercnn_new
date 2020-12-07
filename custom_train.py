@@ -127,7 +127,7 @@ def train(options):
 
     model = POD_Model(yolo_config, rcnn_config, options)
     # refine_model = RefineModel(options)
-
+    print(model.eval())
     model.cuda()
     model.train()
     # refine_model.cuda()
@@ -272,8 +272,7 @@ def train(options):
 
             plane_losses = []
             depth_losses = []
-            for batch_idx in range(batch_size):
-
+            for batch_idx in range(len(planedata)):
                 rpn_match = planedata[batch_idx][2].cuda()
                 rpn_bbox = planedata[batch_idx][3].cuda()
                 gt_depth = torch.from_numpy(planedata[batch_idx][8]).cuda()
@@ -289,7 +288,7 @@ def train(options):
                 l_depth = l1_criterion(midas_out[batch_idx], gt_depth)
                 # l_ssim = torch.clamp((1 - ssim(midas_out[batch_idx].unsqueeze(0).unsqueeze(0), gt_depth.unsqueeze(0).unsqueeze(0), val_range = 1000.0 / 10.0)) * 0.5, 0, 1)
                 l_mse = F.mse_loss(midas_out[batch_idx], gt_depth)
-                d_loss = (1.0 * l_mse) + (0.1 * l_depth)
+                d_loss = (1.0 * l_mse) + (1.0 * l_depth)
                 depth_losses +=[d_loss]
 
                 gt_depth = gt_depth.unsqueeze(0)
@@ -299,6 +298,7 @@ def train(options):
 
             plane_batch_loss = sum(plane_losses)
             depth_batch_loss = sum(depth_losses)
+
             ### Yolo loss
             yolo_loss, loss_items = compute_loss(yolo_out, targets, model.decoder2)
             # if not torch.isfinite(yolo_loss):
@@ -382,11 +382,11 @@ def train(options):
             #     torch.save(_chkpt, wdir + 'backup%g.pt' % epoch)
 
             # Delete checkpoint
-            del _chkpt
+            # del _chkpt
 
         # end epoch ----------------------------------------------------------------------------------------------------
 
-    plot_results()
+    # plot_results()
     print('%g epochs completed in %.3f hours.\n' % (epoch - start_epoch + 1, (time.time() - t0) / 3600))
     torch.cuda.empty_cache()
 
